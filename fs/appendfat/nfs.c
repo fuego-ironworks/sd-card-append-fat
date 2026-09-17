@@ -44,7 +44,7 @@ static struct inode *fat_dget(struct super_block *sb, int i_logstart)
 static struct inode *fat_ilookup(struct super_block *sb, u64 ino, loff_t i_pos)
 {
 	if (MSDOS_SB(sb)->options.nfs == FAT_NFS_NOSTALE_RO)
-		return fat_iget(sb, i_pos);
+		return appendfat_iget(sb, i_pos);
 
 	else {
 		if ((ino < MSDOS_ROOT_INO) || (ino == MSDOS_FSINFO_INO))
@@ -82,7 +82,7 @@ static struct inode *__fat_nfs_get_inode(struct super_block *sb,
 		if (IS_FREE(de[offset].name))
 			inode = NULL;
 		else
-			inode = fat_build_inode(sb, &de[offset], i_pos);
+			inode = appendfat_build_inode(sb, &de[offset], i_pos);
 		brelse(bh);
 	}
 
@@ -246,12 +246,12 @@ struct inode *fat_rebuild_parent(struct super_block *sb, int parent_logstart)
 		}
 
 		dummy_grand_parent->i_ino = iunique(sb, MSDOS_ROOT_INO);
-		fat_fill_inode(dummy_grand_parent, &de[1]);
+		appendfat_fill_inode(dummy_grand_parent, &de[1]);
 		MSDOS_I(dummy_grand_parent)->i_pos = -1;
 	}
 
-	if (!fat_scan_logstart(dummy_grand_parent, clus_to_match, &sinfo)) {
-		parent = fat_build_inode(sb, sinfo.de, sinfo.i_pos);
+	if (!appendfat_scan_logstart(dummy_grand_parent, clus_to_match, &sinfo)) {
+		parent = appendfat_build_inode(sb, sinfo.de, sinfo.i_pos);
 		brelse(sinfo.bh);
 	}
 
@@ -275,7 +275,7 @@ static struct dentry *fat_get_parent(struct dentry *child_dir)
 	struct inode *parent_inode = NULL;
 	struct msdos_sb_info *sbi = MSDOS_SB(sb);
 
-	if (!fat_get_dotdot_entry(d_inode(child_dir), &bh, &de)) {
+	if (!appendfat_get_dotdot_entry(d_inode(child_dir), &bh, &de)) {
 		int parent_logstart = fat_get_start(sbi, de);
 		parent_inode = fat_dget(sb, parent_logstart);
 		if (!parent_inode && sbi->options.nfs == FAT_NFS_NOSTALE_RO)
@@ -286,14 +286,14 @@ static struct dentry *fat_get_parent(struct dentry *child_dir)
 	return d_obtain_alias(parent_inode);
 }
 
-const struct export_operations fat_export_ops = {
+const struct export_operations appendfat_export_ops = {
 	.encode_fh	= generic_encode_ino32_fh,
 	.fh_to_dentry   = fat_fh_to_dentry,
 	.fh_to_parent   = fat_fh_to_parent,
 	.get_parent     = fat_get_parent,
 };
 
-const struct export_operations fat_export_ops_nostale = {
+const struct export_operations appendfat_export_ops_nostale = {
 	.encode_fh      = fat_encode_fh_nostale,
 	.fh_to_dentry   = fat_fh_to_dentry_nostale,
 	.fh_to_parent   = fat_fh_to_parent_nostale,
