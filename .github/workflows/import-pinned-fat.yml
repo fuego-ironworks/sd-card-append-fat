@@ -20,7 +20,7 @@ jobs:
       - name: Import and verify pinned Linux FAT source
         run: |
           ./scripts/import-linux-fat.sh
-          ./scripts/verify-import-manifest.sh
+          sh ./scripts/verify-import-manifest.sh
       - name: Commit exact source import
         run: |
           git config user.name github-actions[bot]
