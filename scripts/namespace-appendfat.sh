@@ -6,6 +6,37 @@ cd "$(git rev-parse --show-toplevel)"
 source_files="fs/appendfat/cache.c fs/appendfat/dir.c fs/appendfat/fat.h fs/appendfat/fat_test.c fs/appendfat/fatent.c fs/appendfat/file.c fs/appendfat/inode.c fs/appendfat/misc.c fs/appendfat/namei_msdos.c fs/appendfat/namei_vfat.c fs/appendfat/nfs.c"
 config_files="fs/appendfat/.kunitconfig fs/appendfat/Kconfig fs/appendfat/Makefile"
 
+require_blob()
+{
+    file=$1
+    expected=$2
+    actual=$(git hash-object "fs/appendfat/$file")
+
+    if [ "$actual" != "$expected" ]; then
+        printf '%s\n' "refusing namespace transform: fs/appendfat/$file is not the pinned baseline" >&2
+        printf '%s\n' "expected: $expected" >&2
+        printf '%s\n' "actual:   $actual" >&2
+        exit 1
+    fi
+}
+
+# This is a one-shot provenance transform. Refuse to overwrite a later
+# derivative after identity or append-allocation work has begun.
+require_blob .kunitconfig 0a6971dbeccb000be7dcd424c09a89496df57de3
+require_blob Kconfig 25fae1c83725bc9293c26e9191690241d77b1295
+require_blob Makefile 2b034112690d8a176b84f259a98f868028336540
+require_blob cache.c 1b87354e24ba3a519082934ca48e277c3405d09b
+require_blob dir.c 35bdb62944a2eb9eaa91e562a2da245929887d7f
+require_blob fat.h 61338413d9f3e404d6dc1ca1915f706913dbb6d4
+require_blob fat_test.c 9583ce66dca3cdc1f783577c35bbd7676cb9bf2f
+require_blob fatent.c f0801d99dd62aefee4f573cfda332e7201235c32
+require_blob file.c 1c835ca5f21a51a10b35522b609092c8ba873ce6
+require_blob inode.c f775a004cae1e2f7eec2b7977c8e11ea1652dfc2
+require_blob misc.c e79762cf19754d19096b5a8d8b2f8b7ae6a31995
+require_blob namei_msdos.c d46d1a3851f25f75b4f9e88c2376894731e5def5
+require_blob namei_vfat.c da3e89c0b16ac8fd076d7f70eec50c682f043812
+require_blob nfs.c 6e1b371711edd5aacb5a81092e32361bb255e86a
+
 replace_token()
 {
     old=$1
