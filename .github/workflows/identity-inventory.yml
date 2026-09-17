@@ -27,6 +27,11 @@ jobs:
           path: linux
           fetch-depth: 1
 
+      - name: Install kernel build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libelf-dev
+
       - name: Configure FAT as modules
         run: |
           make -C linux defconfig
