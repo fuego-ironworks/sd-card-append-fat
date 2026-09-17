@@ -24,9 +24,20 @@ static unsigned long long parse_number(const char *text)
     return value;
 }
 
-static int open_path(const char *path)
+static int open_create(const char *path)
 {
     int fd = open(path, O_CREAT | O_RDWR, 0666);
+
+    if (fd < 0) {
+        perror(path);
+        exit(1);
+    }
+    return fd;
+}
+
+static int open_existing(const char *path, int flags)
+{
+    int fd = open(path, flags);
 
     if (fd < 0) {
         perror(path);
@@ -85,7 +96,7 @@ int main(int argc, char **argv)
         offset = parse_number(argv[3]);
         length = parse_number(argv[4]);
         expected_size = parse_number(argv[5]);
-        fd = open_path(path);
+        fd = open_create(path);
 
         errno = 0;
         result = fallocate(fd, FALLOC_FL_KEEP_SIZE,
@@ -119,7 +130,7 @@ int main(int argc, char **argv)
         }
         path = argv[2];
         expected_size = parse_number(argv[3]);
-        fd = open_path(path);
+        fd = open_existing(path, O_RDONLY);
         require_size(fd, expected_size);
         close(fd);
         return 0;
@@ -134,7 +145,7 @@ int main(int argc, char **argv)
         }
         path = argv[2];
         size = parse_number(argv[3]);
-        fd = open_path(path);
+        fd = open_existing(path, O_RDWR);
         if (ftruncate(fd, (off_t)size) != 0) {
             perror("ftruncate");
             return 1;
