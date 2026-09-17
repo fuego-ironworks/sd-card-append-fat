@@ -16,8 +16,12 @@ if [ "$actual" != "$pinned" ]; then
     exit 1
 fi
 
-test -x "$linux_tree/arch/x86/boot/bzImage" || {
+test -f "$linux_tree/arch/x86/boot/bzImage" || {
     printf '%s\n' 'prepared bzImage missing; run qemu-fat-equivalence.sh first' >&2
+    exit 1
+}
+test -r "$linux_tree/arch/x86/boot/bzImage" || {
+    printf '%s\n' 'prepared bzImage is not readable' >&2
     exit 1
 }
 
@@ -97,16 +101,36 @@ run_phase()
     fi
 }
 
+run_fsck()
+{
+    phase=$1
+    fsck_log=$work/fsck-$phase.log
+
+    set +e
+    fsck.fat -n -v "$fat_image" > "$fsck_log" 2>&1
+    fsck_status=$?
+    set -e
+
+    cat "$fsck_log"
+    printf 'APPENDFAT_KEEP_SIZE_FSCK_%s_STATUS=%s\n' "$phase" "$fsck_status"
+}
+
 reserve_initramfs=$(build_initramfs qemu-fallocate-reserve-init reserve)
 run_phase "$reserve_initramfs" APPENDFAT_KEEP_SIZE_RESERVE_PASS reserve
 
 echo '== fsck after unused reservations =='
-fsck.fat -n -v "$fat_image"
+run_fsck AFTER_RESERVE
 
-consume_initramfs=$(build_initramfs qemu-fallocate-consume-init consume)
-run_phase "$consume_initramfs" APPENDFAT_KEEP_SIZE_CONSUME_PASS consume
+partial_initramfs=$(build_initramfs qemu-fallocate-consume-init partial)
+run_phase "$partial_initramfs" APPENDFAT_KEEP_SIZE_CONSUME_PASS partial
 
-echo '== fsck after consuming part of the reservations =='
-fsck.fat -n -v "$fat_image"
+echo '== fsck after partially consuming reservations =='
+run_fsck AFTER_PARTIAL_CONSUME
 
-printf '%s\n' 'appendfat keep-size reservation characterization passed'
+full_initramfs=$(build_initramfs qemu-fallocate-full-consume-init full)
+run_phase "$full_initramfs" APPENDFAT_KEEP_SIZE_FULL_CONSUME_PASS full
+
+echo '== fsck after fully consuming reservations =='
+run_fsck AFTER_FULL_CONSUME
+
+printf '%s\n' 'appendfat keep-size reservation characterization completed'
