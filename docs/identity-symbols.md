@@ -15,7 +15,7 @@ These must become independent appendfat identities before stock FAT and appendfa
 
 ## Defined global symbols shared by stock and exact copy
 
-The list comes from `nm -g --defined-only` on the three linked module objects on each side. `init_module` and `cleanup_module` are module-loader boilerplate; the remaining shared globals require deliberate namespacing for a robust built-in/module coexistence boundary.
+The list comes from `nm -g --defined-only` on the three linked module objects on each side. `init_module` and `cleanup_module` are module-loader boilerplate; the remaining source-level shared globals require deliberate namespacing for a robust built-in/module coexistence boundary.
 
 ```text
 __fat_fs_error
@@ -131,6 +131,8 @@ fat_truncate_time
 fat_update_time
 init_module
 ```
+
+The `__pfx_*` entries are compiler-generated companions of the corresponding functions. They are evidence of the same collision, not additional source identifiers to rename independently; renaming the source function changes its generated prefix symbol as well.
 
 ## Kernel-exported FAT symbols
 
