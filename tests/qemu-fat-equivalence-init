@@ -1,0 +1,40 @@
+#!/bin/sh
+set -eu
+
+export PATH=/bin
+
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev
+mkdir -p /mnt/card
+
+grep -w vfat /proc/filesystems >/dev/null
+grep -w appendfat /proc/filesystems >/dev/null
+
+mount -t vfat /dev/vda /mnt/card
+printf 'stock-to-append\n' > '/mnt/card/Long Filename From Stock.txt'
+mkdir '/mnt/card/stock-dir'
+printf 'made-by-stock\n' > '/mnt/card/stock-dir/origin.txt'
+sync
+umount /mnt/card
+
+mount -t appendfat /dev/vda /mnt/card
+grep -qx 'stock-to-append' '/mnt/card/Long Filename From Stock.txt'
+grep -qx 'made-by-stock' '/mnt/card/stock-dir/origin.txt'
+printf 'append-to-stock\n' >> '/mnt/card/Long Filename From Stock.txt'
+printf 'made-by-appendfat\n' > '/mnt/card/Created By Appendfat.txt'
+mkdir '/mnt/card/append-dir'
+printf 'append-dir-ok\n' > '/mnt/card/append-dir/origin.txt'
+sync
+umount /mnt/card
+
+mount -t vfat /dev/vda /mnt/card
+grep -q '^stock-to-append$' '/mnt/card/Long Filename From Stock.txt'
+grep -q '^append-to-stock$' '/mnt/card/Long Filename From Stock.txt'
+grep -qx 'made-by-appendfat' '/mnt/card/Created By Appendfat.txt'
+grep -qx 'append-dir-ok' '/mnt/card/append-dir/origin.txt'
+sync
+umount /mnt/card
+
+echo APPENDFAT_QEMU_EQUIVALENCE_PASS
+poweroff -f
