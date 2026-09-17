@@ -1,0 +1,119 @@
+name: Appendfat independent identity
+
+on:
+  push:
+    branches:
+      - appendfat-independent-identity
+    paths:
+      - .github/workflows/identity-coexistence.yml
+
+permissions:
+  contents: write
+
+jobs:
+  identity:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out appendfat repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply explicit identity transform
+        run: |
+          sh scripts/namespace-appendfat.sh
+          git diff --check
+
+      - name: Check out pinned Linux source
+        uses: actions/checkout@v4
+        with:
+          repository: torvalds/linux
+          ref: 238650ef6c7c7cca08e032527329424c9fbd70e5
+          path: linux
+          fetch-depth: 1
+
+      - name: Install kernel build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libelf-dev
+
+      - name: Install appendfat beside stock FAT
+        run: sh scripts/install-appendfat-into-linux.sh linux
+
+      - name: Configure both filesystem families as modules
+        run: |
+          make -C linux defconfig
+          linux/scripts/config --file linux/.config --module FAT_FS
+          linux/scripts/config --file linux/.config --module VFAT_FS
+          linux/scripts/config --file linux/.config --module MSDOS_FS
+          linux/scripts/config --file linux/.config --module APPENDFAT_VFAT_FS
+          linux/scripts/config --file linux/.config --module APPENDFAT_MSDOS_FS
+          linux/scripts/config --file linux/.config --disable FAT_KUNIT_TEST
+          linux/scripts/config --file linux/.config --disable APPENDFAT_KUNIT_TEST
+          make -C linux olddefconfig
+          grep '^CONFIG_FAT_FS=m$' linux/.config
+          grep '^CONFIG_VFAT_FS=m$' linux/.config
+          grep '^CONFIG_MSDOS_FS=m$' linux/.config
+          grep '^CONFIG_APPENDFAT_FS=m$' linux/.config
+          grep '^CONFIG_APPENDFAT_VFAT_FS=m$' linux/.config
+          grep '^CONFIG_APPENDFAT_MSDOS_FS=m$' linux/.config
+          make -C linux -j2 modules_prepare
+
+      - name: Build stock and appendfat linked objects
+        run: |
+          make -C linux -j2 M=fs/fat fat.o vfat.o msdos.o
+          make -C linux -j2 M=fs/appendfat appendfat_core.o appendfat.o appendmsdos.o
+
+      - name: Prove source-level global identities no longer collide
+        run: |
+          stock=$(mktemp)
+          append=$(mktemp)
+          collisions=$(mktemp)
+          meaningful=$(mktemp)
+
+          nm -g --defined-only linux/fs/fat/fat.o linux/fs/fat/vfat.o linux/fs/fat/msdos.o \
+            | awk 'NF >= 3 { print $NF }' | sort -u > "$stock"
+          nm -g --defined-only linux/fs/appendfat/appendfat_core.o linux/fs/appendfat/appendfat.o linux/fs/appendfat/appendmsdos.o \
+            | awk 'NF >= 3 { print $NF }' | sort -u > "$append"
+          comm -12 "$stock" "$append" > "$collisions"
+          grep -Ev '^(__pfx_)?(init_module|cleanup_module)$' "$collisions" > "$meaningful" || true
+
+          echo 'All shared linked-object globals:'
+          cat "$collisions"
+          if [ -s "$meaningful" ]; then
+            echo 'Unexpected stock/appendfat global collisions:' >&2
+            cat "$meaningful" >&2
+            exit 1
+          fi
+
+      - name: Check independent module and filesystem identities
+        run: |
+          test -f linux/fs/appendfat/appendfat_core.o
+          test -f linux/fs/appendfat/appendfat.o
+          test -f linux/fs/appendfat/appendmsdos.o
+          grep -F 'MODULE_ALIAS_FS("vfat")' linux/fs/fat/namei_vfat.c
+          grep -F 'MODULE_ALIAS_FS("msdos")' linux/fs/fat/namei_msdos.c
+          grep -F 'MODULE_ALIAS_FS("appendfat")' linux/fs/appendfat/namei_vfat.c
+          grep -F 'MODULE_ALIAS_FS("appendmsdos")' linux/fs/appendfat/namei_msdos.c
+          grep -F 'obj-$(CONFIG_APPENDFAT_FS) += appendfat_core.o' linux/fs/appendfat/Makefile
+          grep -F 'obj-$(CONFIG_APPENDFAT_VFAT_FS) += appendfat.o' linux/fs/appendfat/Makefile
+          grep -F 'obj-$(CONFIG_APPENDFAT_MSDOS_FS) += appendmsdos.o' linux/fs/appendfat/Makefile
+
+      - name: Reject accidental stock config identity in derivative
+        run: |
+          if grep -En 'CONFIG_(FAT|VFAT|MSDOS)(_|\b)' fs/appendfat/*.c fs/appendfat/fat.h fs/appendfat/Kconfig fs/appendfat/Makefile fs/appendfat/.kunitconfig; then
+            echo 'stock FAT config identity remains in derivative' >&2
+            exit 1
+          fi
+
+      - name: Commit identity-only source transform
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add fs/appendfat
+          if git diff --cached --quiet; then
+            echo 'No identity changes to commit'
+            exit 1
+          fi
+          git commit -m 'Give appendfat an independent kernel identity'
+          git push origin HEAD:appendfat-independent-identity
