@@ -35,6 +35,7 @@ jobs:
           linux/scripts/config --file linux/.config --module MSDOS_FS
           linux/scripts/config --file linux/.config --disable FAT_KUNIT_TEST
           make -C linux olddefconfig
+          make -C linux -j2 modules_prepare
 
       - name: Build stock and exact-copy FAT modules
         run: |
