@@ -130,7 +130,7 @@ static int msdos_find(struct inode *dir, const unsigned char *name, int len,
 	if (err)
 		return -ENOENT;
 
-	err = fat_scan(dir, msdos_name, sinfo);
+	err = appendfat_scan(dir, msdos_name, sinfo);
 	if (!err && sbi->options.dotsOK) {
 		if (name[0] == '.') {
 			if (!(sinfo->de->attr & ATTR_HIDDEN))
@@ -216,7 +216,7 @@ static struct dentry *msdos_lookup(struct inode *dir, struct dentry *dentry,
 		inode = NULL;
 		break;
 	case 0:
-		inode = fat_build_inode(sb, sinfo.de, sinfo.i_pos);
+		inode = appendfat_build_inode(sb, sinfo.de, sinfo.i_pos);
 		brelse(sinfo.bh);
 		break;
 	default:
@@ -241,7 +241,7 @@ static int msdos_add_entry(struct inode *dir, const unsigned char *name,
 	if (is_hid)
 		de.attr |= ATTR_HIDDEN;
 	de.lcase = 0;
-	fat_time_unix2fat(sbi, ts, &time, &date, NULL);
+	appendfat_time_unix2fat(sbi, ts, &time, &date, NULL);
 	de.cdate = de.adate = 0;
 	de.ctime = 0;
 	de.ctime_cs = 0;
@@ -250,11 +250,11 @@ static int msdos_add_entry(struct inode *dir, const unsigned char *name,
 	fat_set_start(&de, cluster);
 	de.size = 0;
 
-	err = fat_add_entries(dir, &de, 1, sinfo);
+	err = appendfat_add_entries(dir, &de, 1, sinfo);
 	if (err)
 		return err;
 
-	fat_truncate_time(dir, ts, FAT_UPDATE_CMTIME);
+	appendfat_truncate_time(dir, ts, FAT_UPDATE_CMTIME);
 	mark_inode_dirty(dir);
 	if (IS_DIRSYNC(dir))
 		(void)sync_inode_metadata(dir, 1);
@@ -281,7 +281,7 @@ static int msdos_create(struct mnt_idmap *idmap, struct inode *dir,
 		goto out;
 	is_hid = (dentry->d_name.name[0] == '.') && (msdos_name[0] != '.');
 	/* Have to do it due to foo vs. .foo conflicts */
-	if (!fat_scan(dir, msdos_name, &sinfo)) {
+	if (!appendfat_scan(dir, msdos_name, &sinfo)) {
 		brelse(sinfo.bh);
 		err = -EINVAL;
 		goto out;
@@ -291,20 +291,20 @@ static int msdos_create(struct mnt_idmap *idmap, struct inode *dir,
 	err = msdos_add_entry(dir, msdos_name, 0, is_hid, 0, &ts, &sinfo);
 	if (err)
 		goto out;
-	inode = fat_build_inode(sb, sinfo.de, sinfo.i_pos);
+	inode = appendfat_build_inode(sb, sinfo.de, sinfo.i_pos);
 	brelse(sinfo.bh);
 	if (IS_ERR(inode)) {
 		err = PTR_ERR(inode);
 		goto out;
 	}
-	fat_truncate_time(inode, &ts, FAT_UPDATE_ATIME | FAT_UPDATE_CMTIME);
+	appendfat_truncate_time(inode, &ts, FAT_UPDATE_ATIME | FAT_UPDATE_CMTIME);
 	/* timestamp is already written, so mark_inode_dirty() is unneeded. */
 
 	d_instantiate(dentry, inode);
 out:
 	mutex_unlock(&MSDOS_SB(sb)->s_lock);
 	if (!err)
-		err = fat_flush_inodes(sb, dir, inode);
+		err = appendfat_flush_inodes(sb, dir, inode);
 	return err;
 }
 
@@ -317,14 +317,14 @@ static int msdos_rmdir(struct inode *dir, struct dentry *dentry)
 	int err;
 
 	mutex_lock(&MSDOS_SB(sb)->s_lock);
-	err = fat_dir_empty(inode);
+	err = appendfat_dir_empty(inode);
 	if (err)
 		goto out;
 	err = msdos_find(dir, dentry->d_name.name, dentry->d_name.len, &sinfo);
 	if (err)
 		goto out;
 
-	err = fat_remove_entries(dir, &sinfo);	/* and releases bh */
+	err = appendfat_remove_entries(dir, &sinfo);	/* and releases bh */
 	if (err)
 		goto out;
 	if (dir->i_nlink >= 3)
@@ -335,11 +335,11 @@ static int msdos_rmdir(struct inode *dir, struct dentry *dentry)
 	}
 
 	clear_nlink(inode);
-	fat_detach(inode);
+	appendfat_detach(inode);
 out:
 	mutex_unlock(&MSDOS_SB(sb)->s_lock);
 	if (!err)
-		err = fat_flush_inodes(sb, dir, inode);
+		err = appendfat_flush_inodes(sb, dir, inode);
 
 	return err;
 }
@@ -363,14 +363,14 @@ static struct dentry *msdos_mkdir(struct mnt_idmap *idmap, struct inode *dir,
 		goto out;
 	is_hid = (dentry->d_name.name[0] == '.') && (msdos_name[0] != '.');
 	/* foo vs .foo situation */
-	if (!fat_scan(dir, msdos_name, &sinfo)) {
+	if (!appendfat_scan(dir, msdos_name, &sinfo)) {
 		brelse(sinfo.bh);
 		err = -EINVAL;
 		goto out;
 	}
 
 	ts = current_time(dir);
-	cluster = fat_alloc_new_dir(dir, &ts);
+	cluster = appendfat_alloc_new_dir(dir, &ts);
 	if (cluster < 0) {
 		err = cluster;
 		goto out;
@@ -380,7 +380,7 @@ static struct dentry *msdos_mkdir(struct mnt_idmap *idmap, struct inode *dir,
 		goto out_free;
 	inc_nlink(dir);
 
-	inode = fat_build_inode(sb, sinfo.de, sinfo.i_pos);
+	inode = appendfat_build_inode(sb, sinfo.de, sinfo.i_pos);
 	brelse(sinfo.bh);
 	if (IS_ERR(inode)) {
 		err = PTR_ERR(inode);
@@ -388,17 +388,17 @@ static struct dentry *msdos_mkdir(struct mnt_idmap *idmap, struct inode *dir,
 		goto out;
 	}
 	set_nlink(inode, 2);
-	fat_truncate_time(inode, &ts, FAT_UPDATE_ATIME | FAT_UPDATE_CMTIME);
+	appendfat_truncate_time(inode, &ts, FAT_UPDATE_ATIME | FAT_UPDATE_CMTIME);
 	/* timestamp is already written, so mark_inode_dirty() is unneeded. */
 
 	d_instantiate(dentry, inode);
 
 	mutex_unlock(&MSDOS_SB(sb)->s_lock);
-	fat_flush_inodes(sb, dir, inode);
+	appendfat_flush_inodes(sb, dir, inode);
 	return NULL;
 
 out_free:
-	fat_free_clusters(dir, cluster);
+	appendfat_free_clusters(dir, cluster);
 out:
 	mutex_unlock(&MSDOS_SB(sb)->s_lock);
 	return ERR_PTR(err);
@@ -417,15 +417,15 @@ static int msdos_unlink(struct inode *dir, struct dentry *dentry)
 	if (err)
 		goto out;
 
-	err = fat_remove_entries(dir, &sinfo);	/* and releases bh */
+	err = appendfat_remove_entries(dir, &sinfo);	/* and releases bh */
 	if (err)
 		goto out;
 	clear_nlink(inode);
-	fat_detach(inode);
+	appendfat_detach(inode);
 out:
 	mutex_unlock(&MSDOS_SB(sb)->s_lock);
 	if (!err)
-		err = fat_flush_inodes(sb, dir, inode);
+		err = appendfat_flush_inodes(sb, dir, inode);
 
 	return err;
 }
@@ -447,7 +447,7 @@ static int do_msdos_rename(struct inode *old_dir, unsigned char *old_name,
 	old_inode = d_inode(old_dentry);
 	new_inode = d_inode(new_dentry);
 
-	err = fat_scan(old_dir, old_name, &old_sinfo);
+	err = appendfat_scan(old_dir, old_name, &old_sinfo);
 	if (err) {
 		err = -EIO;
 		goto out;
@@ -456,14 +456,14 @@ static int do_msdos_rename(struct inode *old_dir, unsigned char *old_name,
 	is_dir = S_ISDIR(old_inode->i_mode);
 	update_dotdot = (is_dir && old_dir != new_dir);
 	if (update_dotdot) {
-		if (fat_get_dotdot_entry(old_inode, &dotdot_bh, &dotdot_de)) {
+		if (appendfat_get_dotdot_entry(old_inode, &dotdot_bh, &dotdot_de)) {
 			err = -EIO;
 			goto out;
 		}
 	}
 
 	old_attrs = MSDOS_I(old_inode)->i_attrs;
-	err = fat_scan(new_dir, new_name, &sinfo);
+	err = appendfat_scan(new_dir, new_name, &sinfo);
 	if (!err) {
 		if (!new_inode) {
 			/* "foo" -> ".foo" case. just change the ATTR_HIDDEN */
@@ -485,7 +485,7 @@ static int do_msdos_rename(struct inode *old_dir, unsigned char *old_name,
 			}
 
 			inode_inc_iversion(old_dir);
-			fat_truncate_time(old_dir, NULL, FAT_UPDATE_CMTIME);
+			appendfat_truncate_time(old_dir, NULL, FAT_UPDATE_CMTIME);
 			mark_inode_dirty(old_dir);
 			if (IS_DIRSYNC(old_dir))
 				(void)sync_inode_metadata(old_dir, 1);
@@ -498,12 +498,12 @@ static int do_msdos_rename(struct inode *old_dir, unsigned char *old_name,
 		if (err)
 			goto out;
 		if (is_dir) {
-			err = fat_dir_empty(new_inode);
+			err = appendfat_dir_empty(new_inode);
 			if (err)
 				goto out;
 		}
 		new_i_pos = MSDOS_I(new_inode)->i_pos;
-		fat_detach(new_inode);
+		appendfat_detach(new_inode);
 	} else {
 		err = msdos_add_entry(new_dir, new_name, is_dir, is_hid, 0,
 				      &ts, &sinfo);
@@ -513,8 +513,8 @@ static int do_msdos_rename(struct inode *old_dir, unsigned char *old_name,
 	}
 	inode_inc_iversion(new_dir);
 
-	fat_detach(old_inode);
-	fat_attach(old_inode, new_i_pos);
+	appendfat_detach(old_inode);
+	appendfat_attach(old_inode, new_i_pos);
 	if (is_hid)
 		MSDOS_I(old_inode)->i_attrs |= ATTR_HIDDEN;
 	else
@@ -540,12 +540,12 @@ static int do_msdos_rename(struct inode *old_dir, unsigned char *old_name,
 			inc_nlink(new_dir);
 	}
 
-	err = fat_remove_entries(old_dir, &old_sinfo);	/* and releases bh */
+	err = appendfat_remove_entries(old_dir, &old_sinfo);	/* and releases bh */
 	old_sinfo.bh = NULL;
 	if (err)
 		goto error_dotdot;
 	inode_inc_iversion(old_dir);
-	fat_truncate_time(old_dir, &ts, FAT_UPDATE_CMTIME);
+	appendfat_truncate_time(old_dir, &ts, FAT_UPDATE_CMTIME);
 	mark_inode_dirty(old_dir);
 	if (IS_DIRSYNC(old_dir))
 		(void)sync_inode_metadata(old_dir, 1);
@@ -572,11 +572,11 @@ error_dotdot:
 		corrupt |= sync_dirty_buffer(dotdot_bh);
 	}
 error_inode:
-	fat_detach(old_inode);
-	fat_attach(old_inode, old_sinfo.i_pos);
+	appendfat_detach(old_inode);
+	appendfat_attach(old_inode, old_sinfo.i_pos);
 	MSDOS_I(old_inode)->i_attrs = old_attrs;
 	if (new_inode) {
-		fat_attach(new_inode, new_i_pos);
+		appendfat_attach(new_inode, new_i_pos);
 		if (corrupt) {
 			mark_inode_dirty(new_inode);
 			corrupt |= sync_inode_metadata(new_inode, 1);
@@ -586,7 +586,7 @@ error_inode:
 		 * If new entry was not sharing the data cluster, it
 		 * shouldn't be serious corruption.
 		 */
-		int err2 = fat_remove_entries(new_dir, &sinfo);
+		int err2 = appendfat_remove_entries(new_dir, &sinfo);
 		if (corrupt)
 			corrupt |= err2;
 		sinfo.bh = NULL;
@@ -633,7 +633,7 @@ static int msdos_rename(struct mnt_idmap *idmap,
 out:
 	mutex_unlock(&MSDOS_SB(sb)->s_lock);
 	if (!err)
-		err = fat_flush_inodes(sb, old_dir, new_dir);
+		err = appendfat_flush_inodes(sb, old_dir, new_dir);
 	return err;
 }
 
@@ -644,10 +644,10 @@ static const struct inode_operations msdos_dir_inode_operations = {
 	.mkdir		= msdos_mkdir,
 	.rmdir		= msdos_rmdir,
 	.rename		= msdos_rename,
-	.setattr	= fat_setattr,
-	.getattr	= fat_getattr,
-	.fileattr_get	= fat_fileattr_get,
-	.update_time	= fat_update_time,
+	.setattr	= appendfat_setattr,
+	.getattr	= appendfat_getattr,
+	.fileattr_get	= appendfat_fileattr_get,
+	.update_time	= appendfat_update_time,
 };
 
 static void setup(struct super_block *sb)
@@ -659,7 +659,7 @@ static void setup(struct super_block *sb)
 
 static int msdos_fill_super(struct super_block *sb, struct fs_context *fc)
 {
-	return fat_fill_super(sb, fc, setup);
+	return appendfat_fill_super(sb, fc, setup);
 }
 
 static int msdos_get_tree(struct fs_context *fc)
@@ -669,14 +669,14 @@ static int msdos_get_tree(struct fs_context *fc)
 
 static int msdos_parse_param(struct fs_context *fc, struct fs_parameter *param)
 {
-	return fat_parse_param(fc, param, false);
+	return appendfat_parse_param(fc, param, false);
 }
 
 static const struct fs_context_operations msdos_context_ops = {
 	.parse_param	= msdos_parse_param,
 	.get_tree	= msdos_get_tree,
-	.reconfigure	= fat_reconfigure,
-	.free		= fat_free_fc,
+	.reconfigure	= appendfat_reconfigure,
+	.free		= appendfat_free_fc,
 };
 
 static int msdos_init_fs_context(struct fs_context *fc)
@@ -684,7 +684,7 @@ static int msdos_init_fs_context(struct fs_context *fc)
 	int err;
 
 	/* Initialize with is_vfat == false */
-	err = fat_init_fs_context(fc, false);
+	err = appendfat_init_fs_context(fc, false);
 	if (err)
 		return err;
 
@@ -694,13 +694,13 @@ static int msdos_init_fs_context(struct fs_context *fc)
 
 static struct file_system_type msdos_fs_type = {
 	.owner		= THIS_MODULE,
-	.name		= "msdos",
+	.name		= "appendmsdos",
 	.kill_sb	= kill_block_super,
 	.fs_flags	= FS_REQUIRES_DEV | FS_ALLOW_IDMAP,
 	.init_fs_context = msdos_init_fs_context,
-	.parameters	= fat_param_spec,
+	.parameters	= appendfat_param_spec,
 };
-MODULE_ALIAS_FS("msdos");
+MODULE_ALIAS_FS("appendmsdos");
 
 static int __init init_msdos_fs(void)
 {
@@ -714,7 +714,7 @@ static void __exit exit_msdos_fs(void)
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Werner Almesberger");
-MODULE_DESCRIPTION("MS-DOS filesystem support");
+MODULE_DESCRIPTION("appendfat MS-DOS-compatible filesystem support");
 
 module_init(init_msdos_fs)
 module_exit(exit_msdos_fs)

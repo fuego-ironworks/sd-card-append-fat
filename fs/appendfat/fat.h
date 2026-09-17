@@ -118,7 +118,7 @@ struct msdos_inode_info {
 	spinlock_t cache_lru_lock;
 	struct list_head cache_lru;
 	int nr_caches;
-	/* for avoiding the race between fat_free() and fat_get_cluster() */
+	/* for avoiding the race between fat_free() and appendfat_get_cluster() */
 	unsigned int cache_valid_id;
 
 	/* NOTE: mmu_private is 64bits, so must hold ->i_mutex to access */
@@ -318,31 +318,31 @@ static inline void fatwchar_to16(__u8 *dst, const wchar_t *src, size_t len)
 }
 
 /* fat/cache.c */
-extern void fat_cache_inval_inode(struct inode *inode);
-extern int fat_get_cluster(struct inode *inode, int cluster,
+extern void appendfat_cache_inval_inode(struct inode *inode);
+extern int appendfat_get_cluster(struct inode *inode, int cluster,
 			   int *fclus, int *dclus);
-extern int fat_get_mapped_cluster(struct inode *inode, sector_t sector,
+extern int appendfat_get_mapped_cluster(struct inode *inode, sector_t sector,
 				  sector_t last_block,
 				  unsigned long *mapped_blocks, sector_t *bmap);
-extern int fat_bmap(struct inode *inode, sector_t sector, sector_t *phys,
+extern int appendfat_bmap(struct inode *inode, sector_t sector, sector_t *phys,
 		    unsigned long *mapped_blocks, int create, bool from_bmap);
 
 /* fat/dir.c */
-extern const struct file_operations fat_dir_operations;
-extern int fat_search_long(struct inode *inode, const unsigned char *name,
+extern const struct file_operations appendfat_dir_operations;
+extern int appendfat_search_long(struct inode *inode, const unsigned char *name,
 			   int name_len, struct fat_slot_info *sinfo);
-extern int fat_dir_empty(struct inode *dir);
-extern int fat_subdirs(struct inode *dir);
-extern int fat_scan(struct inode *dir, const unsigned char *name,
+extern int appendfat_dir_empty(struct inode *dir);
+extern int appendfat_subdirs(struct inode *dir);
+extern int appendfat_scan(struct inode *dir, const unsigned char *name,
 		    struct fat_slot_info *sinfo);
-extern int fat_scan_logstart(struct inode *dir, int i_logstart,
+extern int appendfat_scan_logstart(struct inode *dir, int i_logstart,
 			     struct fat_slot_info *sinfo);
-extern int fat_get_dotdot_entry(struct inode *dir, struct buffer_head **bh,
+extern int appendfat_get_dotdot_entry(struct inode *dir, struct buffer_head **bh,
 				struct msdos_dir_entry **de);
-extern int fat_alloc_new_dir(struct inode *dir, struct timespec64 *ts);
-extern int fat_add_entries(struct inode *dir, void *slots, int nr_slots,
+extern int appendfat_alloc_new_dir(struct inode *dir, struct timespec64 *ts);
+extern int appendfat_add_entries(struct inode *dir, void *slots, int nr_slots,
 			   struct fat_slot_info *sinfo);
-extern int fat_remove_entries(struct inode *dir, struct fat_slot_info *sinfo);
+extern int appendfat_remove_entries(struct inode *dir, struct fat_slot_info *sinfo);
 
 /* fat/fatent.c */
 struct fat_entry {
@@ -388,103 +388,103 @@ static inline bool fat_valid_entry(struct msdos_sb_info *sbi, int entry)
 	return FAT_START_ENT <= entry && entry < sbi->max_cluster;
 }
 
-extern void fat_ent_access_init(struct super_block *sb);
-extern int fat_ent_read(struct inode *inode, struct fat_entry *fatent,
+extern void appendfat_ent_access_init(struct super_block *sb);
+extern int appendfat_ent_read(struct inode *inode, struct fat_entry *fatent,
 			int entry);
-extern int fat_ent_write(struct inode *inode, struct fat_entry *fatent,
+extern int appendfat_ent_write(struct inode *inode, struct fat_entry *fatent,
 			 int new, int wait);
-extern int fat_alloc_clusters(struct inode *inode, int *cluster,
+extern int appendfat_alloc_clusters(struct inode *inode, int *cluster,
 			      int nr_cluster);
-extern int fat_free_clusters(struct inode *inode, int cluster);
-extern int fat_count_free_clusters(struct super_block *sb);
-extern int fat_trim_fs(struct inode *inode, struct fstrim_range *range);
+extern int appendfat_free_clusters(struct inode *inode, int cluster);
+extern int appendfat_count_free_clusters(struct super_block *sb);
+extern int appendfat_trim_fs(struct inode *inode, struct fstrim_range *range);
 
 /* fat/file.c */
-extern long fat_generic_ioctl(struct file *filp, unsigned int cmd,
+extern long appendfat_generic_ioctl(struct file *filp, unsigned int cmd,
 			      unsigned long arg);
-extern const struct file_operations fat_file_operations;
-extern const struct inode_operations fat_file_inode_operations;
-extern int fat_setattr(struct mnt_idmap *idmap, struct dentry *dentry,
+extern const struct file_operations appendfat_file_operations;
+extern const struct inode_operations appendfat_file_inode_operations;
+extern int appendfat_setattr(struct mnt_idmap *idmap, struct dentry *dentry,
 		       struct iattr *attr);
-extern void fat_truncate_blocks(struct inode *inode, loff_t offset);
-extern int fat_getattr(struct mnt_idmap *idmap,
+extern void appendfat_truncate_blocks(struct inode *inode, loff_t offset);
+extern int appendfat_getattr(struct mnt_idmap *idmap,
 		       const struct path *path, struct kstat *stat,
 		       u32 request_mask, unsigned int flags);
-int fat_fileattr_get(struct dentry *dentry, struct file_kattr *fa);
-extern int fat_file_fsync(struct file *file, loff_t start, loff_t end,
+int appendfat_fileattr_get(struct dentry *dentry, struct file_kattr *fa);
+extern int appendfat_file_fsync(struct file *file, loff_t start, loff_t end,
 			  int datasync);
 
 /* fat/inode.c */
-extern int fat_block_truncate_page(struct inode *inode, loff_t from);
-extern void fat_attach(struct inode *inode, loff_t i_pos);
-extern void fat_detach(struct inode *inode);
-extern struct inode *fat_iget(struct super_block *sb, loff_t i_pos);
-extern struct inode *fat_build_inode(struct super_block *sb,
+extern int appendfat_block_truncate_page(struct inode *inode, loff_t from);
+extern void appendfat_attach(struct inode *inode, loff_t i_pos);
+extern void appendfat_detach(struct inode *inode);
+extern struct inode *appendfat_iget(struct super_block *sb, loff_t i_pos);
+extern struct inode *appendfat_build_inode(struct super_block *sb,
 			struct msdos_dir_entry *de, loff_t i_pos);
-extern int fat_fill_super(struct super_block *sb, struct fs_context *fc,
+extern int appendfat_fill_super(struct super_block *sb, struct fs_context *fc,
 			  void (*setup)(struct super_block *));
-extern int fat_fill_inode(struct inode *inode, struct msdos_dir_entry *de);
+extern int appendfat_fill_inode(struct inode *inode, struct msdos_dir_entry *de);
 
-extern int fat_flush_inodes(struct super_block *sb, struct inode *i1,
+extern int appendfat_flush_inodes(struct super_block *sb, struct inode *i1,
 			    struct inode *i2);
 
-extern const struct fs_parameter_spec fat_param_spec[];
-int fat_init_fs_context(struct fs_context *fc, bool is_vfat);
-void fat_free_fc(struct fs_context *fc);
+extern const struct fs_parameter_spec appendfat_param_spec[];
+int appendfat_init_fs_context(struct fs_context *fc, bool is_vfat);
+void appendfat_free_fc(struct fs_context *fc);
 
-int fat_parse_param(struct fs_context *fc, struct fs_parameter *param,
+int appendfat_parse_param(struct fs_context *fc, struct fs_parameter *param,
 		    bool is_vfat);
-int fat_reconfigure(struct fs_context *fc);
+int appendfat_reconfigure(struct fs_context *fc);
 
 static inline unsigned long fat_dir_hash(int logstart)
 {
 	return hash_32(logstart, FAT_HASH_BITS);
 }
-extern int fat_add_cluster(struct inode *inode);
+extern int appendfat_add_cluster(struct inode *inode);
 
 /* fat/misc.c */
 extern __printf(3, 4) __cold
-void __fat_fs_error(struct super_block *sb, int report, const char *fmt, ...);
+void __appendfat_fs_error(struct super_block *sb, int report, const char *fmt, ...);
 #define fat_fs_error(sb, fmt, args...)		\
-	__fat_fs_error(sb, 1, fmt , ## args)
+	__appendfat_fs_error(sb, 1, fmt , ## args)
 #define fat_fs_error_ratelimit(sb, fmt, args...) \
-	__fat_fs_error(sb, __ratelimit(&MSDOS_SB(sb)->ratelimit), fmt , ## args)
+	__appendfat_fs_error(sb, __ratelimit(&MSDOS_SB(sb)->ratelimit), fmt , ## args)
 
 #define FAT_PRINTK_PREFIX "%sFAT-fs (%s): "
 #define fat_msg(sb, level, fmt, args...)				\
 do {									\
 	printk_index_subsys_emit(FAT_PRINTK_PREFIX, level, fmt, ##args);\
-	_fat_msg(sb, level, fmt, ##args);				\
+	_appendfat_msg(sb, level, fmt, ##args);				\
 } while (0)
 __printf(3, 4) __cold
-void _fat_msg(struct super_block *sb, const char *level, const char *fmt, ...);
+void _appendfat_msg(struct super_block *sb, const char *level, const char *fmt, ...);
 #define fat_msg_ratelimit(sb, level, fmt, args...)	\
 	do {	\
 			if (__ratelimit(&MSDOS_SB(sb)->ratelimit))	\
 				fat_msg(sb, level, fmt, ## args);	\
 	 } while (0)
-extern int fat_clusters_flush(struct super_block *sb);
-extern int fat_chain_add(struct inode *inode, int new_dclus, int nr_cluster);
-extern void fat_time_fat2unix(struct msdos_sb_info *sbi, struct timespec64 *ts,
+extern int appendfat_clusters_flush(struct super_block *sb);
+extern int appendfat_chain_add(struct inode *inode, int new_dclus, int nr_cluster);
+extern void appendfat_time_fat2unix(struct msdos_sb_info *sbi, struct timespec64 *ts,
 			      __le16 __time, __le16 __date, u8 time_cs);
-extern void fat_time_unix2fat(struct msdos_sb_info *sbi, struct timespec64 *ts,
+extern void appendfat_time_unix2fat(struct msdos_sb_info *sbi, struct timespec64 *ts,
 			      __le16 *time, __le16 *date, u8 *time_cs);
-extern struct timespec64 fat_truncate_atime(const struct msdos_sb_info *sbi,
+extern struct timespec64 appendfat_truncate_atime(const struct msdos_sb_info *sbi,
 					    const struct timespec64 *ts);
 #define FAT_UPDATE_ATIME	(1u << 0)
 #define FAT_UPDATE_CMTIME	(1u << 1)
-void fat_truncate_time(struct inode *inode, struct timespec64 *now,
+void appendfat_truncate_time(struct inode *inode, struct timespec64 *now,
 		unsigned int flags);
-int fat_update_time(struct inode *inode, enum fs_update_time type,
+int appendfat_update_time(struct inode *inode, enum fs_update_time type,
 		unsigned int flags);
-extern int fat_sync_bhs(struct buffer_head **bhs, int nr_bhs);
+extern int appendfat_sync_bhs(struct buffer_head **bhs, int nr_bhs);
 
-int fat_cache_init(void);
-void fat_cache_destroy(void);
+int appendfat_cache_init(void);
+void appendfat_cache_destroy(void);
 
 /* fat/nfs.c */
-extern const struct export_operations fat_export_ops;
-extern const struct export_operations fat_export_ops_nostale;
+extern const struct export_operations appendfat_export_ops;
+extern const struct export_operations appendfat_export_ops_nostale;
 
 /* helper for printk */
 typedef unsigned long long	llu;

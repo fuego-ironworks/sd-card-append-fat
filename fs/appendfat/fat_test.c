@@ -244,7 +244,7 @@ static void truncate_atime_testcase_desc(struct fat_truncate_atime_testcase *t,
 KUNIT_ARRAY_PARAM(fat_time, time_test_cases, time_testcase_desc);
 KUNIT_ARRAY_PARAM(fat_unix2fat_clamp, unix2fat_clamp_test_cases,
 		  unix2fat_clamp_testcase_desc);
-KUNIT_ARRAY_PARAM(fat_truncate_atime, truncate_atime_test_cases,
+KUNIT_ARRAY_PARAM(appendfat_truncate_atime, truncate_atime_test_cases,
 		  truncate_atime_testcase_desc);
 
 static void fat_test_set_time_offset(struct msdos_sb_info *sbi, int time_offset)
@@ -263,7 +263,7 @@ static void fat_time_fat2unix_test(struct kunit *test)
 
 	fat_test_set_time_offset(&fake_sb, testcase->time_offset);
 
-	fat_time_fat2unix(&fake_sb, &ts,
+	appendfat_time_fat2unix(&fake_sb, &ts,
 			  testcase->time,
 			  testcase->date,
 			  testcase->cs);
@@ -287,7 +287,7 @@ static void fat_time_unix2fat_test(struct kunit *test)
 
 	fat_test_set_time_offset(&fake_sb, testcase->time_offset);
 
-	fat_time_unix2fat(&fake_sb, &testcase->ts,
+	appendfat_time_unix2fat(&fake_sb, &testcase->ts,
 			  &time, &date, &cs);
 	KUNIT_EXPECT_EQ_MSG(test,
 			    testcase->time,
@@ -313,7 +313,7 @@ static void fat_time_unix2fat_clamp_test(struct kunit *test)
 
 	fat_test_set_time_offset(&fake_sb, testcase->time_offset);
 
-	fat_time_unix2fat(&fake_sb, &testcase->ts, &time, &date, &cs);
+	appendfat_time_unix2fat(&fake_sb, &testcase->ts, &time, &date, &cs);
 	KUNIT_EXPECT_EQ_MSG(test,
 			    testcase->time,
 			    time,
@@ -339,7 +339,7 @@ static void fat_time_unix2fat_no_csec_test(struct kunit *test)
 
 	fat_test_set_time_offset(&fake_sb, 0);
 
-	fat_time_unix2fat(&fake_sb, &ts, &time, &date, NULL);
+	appendfat_time_unix2fat(&fake_sb, &ts, &time, &date, NULL);
 	KUNIT_EXPECT_EQ_MSG(test,
 			    49021,
 			    le16_to_cpu(time),
@@ -359,7 +359,7 @@ static void fat_truncate_atime_test(struct kunit *test)
 
 	fat_test_set_time_offset(&fake_sb, testcase->time_offset);
 
-	actual = fat_truncate_atime(&fake_sb, &testcase->ts);
+	actual = appendfat_truncate_atime(&fake_sb, &testcase->ts);
 	KUNIT_EXPECT_EQ_MSG(test,
 			    testcase->expected.tv_sec,
 			    actual.tv_sec,
@@ -385,11 +385,11 @@ static struct kunit_case fat_test_cases[] = {
 };
 
 static struct kunit_suite fat_test_suite = {
-	.name = "fat_test",
+	.name = "appendfat_test",
 	.test_cases = fat_test_cases,
 };
 
 kunit_test_suites(&fat_test_suite);
 
-MODULE_DESCRIPTION("KUnit tests for FAT filesystems");
+MODULE_DESCRIPTION("KUnit tests for appendfat");
 MODULE_LICENSE("GPL v2");

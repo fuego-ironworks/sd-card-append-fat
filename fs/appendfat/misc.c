@@ -18,7 +18,7 @@
  * In case the file system is remounted read-only, it can be made writable
  * again by remounting it.
  */
-void __fat_fs_error(struct super_block *sb, int report, const char *fmt, ...)
+void __appendfat_fs_error(struct super_block *sb, int report, const char *fmt, ...)
 {
 	struct fat_mount_options *opts = &MSDOS_SB(sb)->options;
 	va_list args;
@@ -39,19 +39,19 @@ void __fat_fs_error(struct super_block *sb, int report, const char *fmt, ...)
 		fat_msg(sb, KERN_ERR, "Filesystem has been set read-only");
 	}
 }
-EXPORT_SYMBOL_GPL(__fat_fs_error);
+EXPORT_SYMBOL_GPL(__appendfat_fs_error);
 
 /**
- * _fat_msg() - Print a preformatted FAT message based on a superblock.
+ * _appendfat_msg() - Print a preformatted FAT message based on a superblock.
  * @sb: A pointer to a &struct super_block
  * @level: A Kernel printk level constant
  * @fmt: The printf-style format string to print.
  *
  * Everything that is not fat_fs_error() should be fat_msg().
  *
- * fat_msg() wraps _fat_msg() for printk indexing.
+ * fat_msg() wraps _appendfat_msg() for printk indexing.
  */
-void _fat_msg(struct super_block *sb, const char *level, const char *fmt, ...)
+void _appendfat_msg(struct super_block *sb, const char *level, const char *fmt, ...)
 {
 	struct va_format vaf;
 	va_list args;
@@ -65,7 +65,7 @@ void _fat_msg(struct super_block *sb, const char *level, const char *fmt, ...)
 
 /* Flushes the number of free clusters on FAT32 */
 /* XXX: Need to write one per FSINFO block.  Currently only writes 1 */
-int fat_clusters_flush(struct super_block *sb)
+int appendfat_clusters_flush(struct super_block *sb)
 {
 	struct msdos_sb_info *sbi = MSDOS_SB(sb);
 	struct buffer_head *bh;
@@ -76,7 +76,7 @@ int fat_clusters_flush(struct super_block *sb)
 
 	bh = sb_bread(sb, sbi->fsinfo_sector);
 	if (bh == NULL) {
-		fat_msg(sb, KERN_ERR, "bread failed in fat_clusters_flush");
+		fat_msg(sb, KERN_ERR, "bread failed in appendfat_clusters_flush");
 		return -EIO;
 	}
 
@@ -101,10 +101,10 @@ int fat_clusters_flush(struct super_block *sb)
 }
 
 /*
- * fat_chain_add() adds a new cluster to the chain of clusters represented
+ * appendfat_chain_add() adds a new cluster to the chain of clusters represented
  * by inode.
  */
-int fat_chain_add(struct inode *inode, int new_dclus, int nr_cluster)
+int appendfat_chain_add(struct inode *inode, int new_dclus, int nr_cluster)
 {
 	struct super_block *sb = inode->i_sb;
 	struct msdos_sb_info *sbi = MSDOS_SB(sb);
@@ -118,7 +118,7 @@ int fat_chain_add(struct inode *inode, int new_dclus, int nr_cluster)
 	if (MSDOS_I(inode)->i_start) {
 		int fclus, dclus;
 
-		ret = fat_get_cluster(inode, FAT_ENT_EOF, &fclus, &dclus);
+		ret = appendfat_get_cluster(inode, FAT_ENT_EOF, &fclus, &dclus);
 		if (ret < 0)
 			return ret;
 		new_fclus = fclus + 1;
@@ -130,14 +130,14 @@ int fat_chain_add(struct inode *inode, int new_dclus, int nr_cluster)
 		struct fat_entry fatent;
 
 		fatent_init(&fatent);
-		ret = fat_ent_read(inode, &fatent, last);
+		ret = appendfat_ent_read(inode, &fatent, last);
 		if (ret >= 0) {
 			int wait = inode_needs_sync(inode);
 			int old = ret;
 
-			ret = fat_ent_write(inode, &fatent, new_dclus, wait);
+			ret = appendfat_ent_write(inode, &fatent, new_dclus, wait);
 			if (ret < 0)
-				fat_ent_write(inode, &fatent, old, wait);
+				appendfat_ent_write(inode, &fatent, old, wait);
 			fatent_brelse(&fatent);
 		}
 		if (ret < 0)
@@ -166,7 +166,7 @@ int fat_chain_add(struct inode *inode, int new_dclus, int nr_cluster)
 		fat_fs_error_ratelimit(
 			sb, "clusters badly computed (%d != %llu)", new_fclus,
 			(llu)(inode->i_blocks >> (sbi->cluster_bits - 9)));
-		fat_cache_inval_inode(inode);
+		appendfat_cache_inval_inode(inode);
 	}
 	inode->i_blocks += nr_cluster << (sbi->cluster_bits - 9);
 
@@ -206,7 +206,7 @@ static inline int fat_tz_offset(const struct msdos_sb_info *sbi)
 }
 
 /* Convert a FAT time/date pair to a UNIX date (seconds since 1 1 70). */
-void fat_time_fat2unix(struct msdos_sb_info *sbi, struct timespec64 *ts,
+void appendfat_time_fat2unix(struct msdos_sb_info *sbi, struct timespec64 *ts,
 		       __le16 __time, __le16 __date, u8 time_cs)
 {
 	u16 time = le16_to_cpu(__time), date = le16_to_cpu(__date);
@@ -241,11 +241,11 @@ void fat_time_fat2unix(struct msdos_sb_info *sbi, struct timespec64 *ts,
 	}
 }
 
-/* Export fat_time_fat2unix() for the fat_test KUnit tests. */
-EXPORT_SYMBOL_GPL(fat_time_fat2unix);
+/* Export appendfat_time_fat2unix() for the fat_test KUnit tests. */
+EXPORT_SYMBOL_GPL(appendfat_time_fat2unix);
 
 /* Convert linear UNIX date to a FAT time/date pair. */
-void fat_time_unix2fat(struct msdos_sb_info *sbi, struct timespec64 *ts,
+void appendfat_time_unix2fat(struct msdos_sb_info *sbi, struct timespec64 *ts,
 		       __le16 *time, __le16 *date, u8 *time_cs)
 {
 	struct tm tm;
@@ -279,7 +279,7 @@ void fat_time_unix2fat(struct msdos_sb_info *sbi, struct timespec64 *ts,
 	if (time_cs)
 		*time_cs = (ts->tv_sec & 1) * 100 + ts->tv_nsec / 10000000;
 }
-EXPORT_SYMBOL_GPL(fat_time_unix2fat);
+EXPORT_SYMBOL_GPL(appendfat_time_unix2fat);
 
 static inline struct timespec64 fat_timespec64_trunc_2secs(struct timespec64 ts)
 {
@@ -289,7 +289,7 @@ static inline struct timespec64 fat_timespec64_trunc_2secs(struct timespec64 ts)
 /*
  * truncate atime to 24 hour granularity (00:00:00 in local timezone)
  */
-struct timespec64 fat_truncate_atime(const struct msdos_sb_info *sbi,
+struct timespec64 appendfat_truncate_atime(const struct msdos_sb_info *sbi,
 				     const struct timespec64 *ts)
 {
 	/* to localtime */
@@ -302,8 +302,8 @@ struct timespec64 fat_truncate_atime(const struct msdos_sb_info *sbi,
 
 	return (struct timespec64){ seconds, 0 };
 }
-/* Export fat_truncate_atime() for the fat_test KUnit tests. */
-EXPORT_SYMBOL_GPL(fat_truncate_atime);
+/* Export appendfat_truncate_atime() for the fat_test KUnit tests. */
+EXPORT_SYMBOL_GPL(appendfat_truncate_atime);
 
 /*
  * Update the in-inode atime and/or mtime after truncating the timestamp to the
@@ -313,7 +313,7 @@ EXPORT_SYMBOL_GPL(fat_truncate_atime);
  * memory.  All mtime updates will be applied to ctime, but ctime updates are
  * ignored.
  */
-void fat_truncate_time(struct inode *inode, struct timespec64 *now,
+void appendfat_truncate_time(struct inode *inode, struct timespec64 *now,
 		unsigned int flags)
 {
 	struct msdos_sb_info *sbi = MSDOS_SB(inode->i_sb);
@@ -328,7 +328,7 @@ void fat_truncate_time(struct inode *inode, struct timespec64 *now,
 	}
 
 	if (flags & FAT_UPDATE_ATIME)
-		inode_set_atime_to_ts(inode, fat_truncate_atime(sbi, now));
+		inode_set_atime_to_ts(inode, appendfat_truncate_atime(sbi, now));
 	if (flags & FAT_UPDATE_CMTIME) {
 		/* truncate mtime to 2 second granularity */
 		struct timespec64 mtime = fat_timespec64_trunc_2secs(*now);
@@ -337,21 +337,21 @@ void fat_truncate_time(struct inode *inode, struct timespec64 *now,
 		inode_set_ctime_to_ts(inode, mtime);
 	}
 }
-EXPORT_SYMBOL_GPL(fat_truncate_time);
+EXPORT_SYMBOL_GPL(appendfat_truncate_time);
 
-int fat_update_time(struct inode *inode, enum fs_update_time type,
+int appendfat_update_time(struct inode *inode, enum fs_update_time type,
 		unsigned int flags)
 {
 	if (inode->i_ino != MSDOS_ROOT_INO) {
-		fat_truncate_time(inode, NULL, type == FS_UPD_ATIME ?
+		appendfat_truncate_time(inode, NULL, type == FS_UPD_ATIME ?
 				FAT_UPDATE_ATIME : FAT_UPDATE_CMTIME);
 		__mark_inode_dirty(inode, inode_time_dirty_flag(inode));
 	}
 	return 0;
 }
-EXPORT_SYMBOL_GPL(fat_update_time);
+EXPORT_SYMBOL_GPL(appendfat_update_time);
 
-int fat_sync_bhs(struct buffer_head **bhs, int nr_bhs)
+int appendfat_sync_bhs(struct buffer_head **bhs, int nr_bhs)
 {
 	int i, err = 0;
 

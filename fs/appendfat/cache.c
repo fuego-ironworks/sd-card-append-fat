@@ -38,7 +38,7 @@ static void init_once(void *foo)
 	INIT_LIST_HEAD(&cache->cache_list);
 }
 
-int __init fat_cache_init(void)
+int __init appendfat_cache_init(void)
 {
 	fat_cache_cachep = kmem_cache_create("fat_cache",
 				sizeof(struct fat_cache),
@@ -49,7 +49,7 @@ int __init fat_cache_init(void)
 	return 0;
 }
 
-void fat_cache_destroy(void)
+void appendfat_cache_destroy(void)
 {
 	kmem_cache_destroy(fat_cache_cachep);
 }
@@ -196,7 +196,7 @@ static void __fat_cache_inval_inode(struct inode *inode)
 		i->cache_valid_id++;
 }
 
-void fat_cache_inval_inode(struct inode *inode)
+void appendfat_cache_inval_inode(struct inode *inode)
 {
 	spin_lock(&MSDOS_I(inode)->cache_lru_lock);
 	__fat_cache_inval_inode(inode);
@@ -217,7 +217,7 @@ static inline void cache_init(struct fat_cache_id *cid, int fclus, int dclus)
 	cid->nr_contig = 0;
 }
 
-int fat_get_cluster(struct inode *inode, int cluster, int *fclus, int *dclus)
+int appendfat_get_cluster(struct inode *inode, int cluster, int *fclus, int *dclus)
 {
 	struct super_block *sb = inode->i_sb;
 	struct msdos_sb_info *sbi = MSDOS_SB(sb);
@@ -258,7 +258,7 @@ int fat_get_cluster(struct inode *inode, int cluster, int *fclus, int *dclus)
 			goto out;
 		}
 
-		nr = fat_ent_read(inode, &fatent, *dclus);
+		nr = appendfat_ent_read(inode, &fatent, *dclus);
 		if (nr < 0)
 			goto out;
 		else if (nr == FAT_ENT_FREE) {
@@ -291,7 +291,7 @@ static int fat_bmap_cluster(struct inode *inode, int cluster)
 	if (MSDOS_I(inode)->i_start == 0)
 		return 0;
 
-	ret = fat_get_cluster(inode, cluster, &fclus, &dclus);
+	ret = appendfat_get_cluster(inode, cluster, &fclus, &dclus);
 	if (ret < 0)
 		return ret;
 	else if (ret == FAT_ENT_EOF) {
@@ -302,7 +302,7 @@ static int fat_bmap_cluster(struct inode *inode, int cluster)
 	return dclus;
 }
 
-int fat_get_mapped_cluster(struct inode *inode, sector_t sector,
+int appendfat_get_mapped_cluster(struct inode *inode, sector_t sector,
 			   sector_t last_block,
 			   unsigned long *mapped_blocks, sector_t *bmap)
 {
@@ -350,7 +350,7 @@ static int is_exceed_eof(struct inode *inode, sector_t sector,
 	return 0;
 }
 
-int fat_bmap(struct inode *inode, sector_t sector, sector_t *phys,
+int appendfat_bmap(struct inode *inode, sector_t sector, sector_t *phys,
 	     unsigned long *mapped_blocks, int create, bool from_bmap)
 {
 	struct msdos_sb_info *sbi = MSDOS_SB(inode->i_sb);
@@ -376,6 +376,6 @@ int fat_bmap(struct inode *inode, sector_t sector, sector_t *phys,
 			return 0;
 	}
 
-	return fat_get_mapped_cluster(inode, sector, last_block, mapped_blocks,
+	return appendfat_get_mapped_cluster(inode, sector, last_block, mapped_blocks,
 				      phys);
 }
