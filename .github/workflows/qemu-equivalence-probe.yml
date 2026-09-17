@@ -1,0 +1,144 @@
+name: QEMU FAT image equivalence probe
+
+on:
+  push:
+    branches:
+      - appendfat-fat-image-equivalence
+    paths:
+      - .github/workflows/qemu-equivalence-probe.yml
+
+jobs:
+  equivalence:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out appendfat repository
+        uses: actions/checkout@v4
+
+      - name: Check out pinned Linux source
+        uses: actions/checkout@v4
+        with:
+          repository: torvalds/linux
+          ref: 238650ef6c7c7cca08e032527329424c9fbd70e5
+          path: linux
+          fetch-depth: 1
+
+      - name: Install build and VM dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential bc bison flex libssl-dev libelf-dev qemu-system-x86 busybox-static dosfstools cpio
+
+      - name: Install appendfat beside stock FAT
+        run: sh scripts/install-appendfat-into-linux.sh linux
+
+      - name: Configure stock FAT and appendfat built in
+        run: |
+          make -C linux defconfig
+          linux/scripts/config --file linux/.config --enable FAT_FS
+          linux/scripts/config --file linux/.config --enable VFAT_FS
+          linux/scripts/config --file linux/.config --enable MSDOS_FS
+          linux/scripts/config --file linux/.config --enable APPENDFAT_VFAT_FS
+          linux/scripts/config --file linux/.config --enable APPENDFAT_MSDOS_FS
+          linux/scripts/config --file linux/.config --disable FAT_KUNIT_TEST
+          linux/scripts/config --file linux/.config --disable APPENDFAT_KUNIT_TEST
+          linux/scripts/config --file linux/.config --enable BLK_DEV_INITRD
+          linux/scripts/config --file linux/.config --enable DEVTMPFS
+          linux/scripts/config --file linux/.config --enable DEVTMPFS_MOUNT
+          linux/scripts/config --file linux/.config --enable VIRTIO
+          linux/scripts/config --file linux/.config --enable VIRTIO_PCI
+          linux/scripts/config --file linux/.config --enable VIRTIO_BLK
+          linux/scripts/config --file linux/.config --enable SERIAL_8250
+          linux/scripts/config --file linux/.config --enable SERIAL_8250_CONSOLE
+          linux/scripts/config --file linux/.config --enable NLS_CODEPAGE_437
+          linux/scripts/config --file linux/.config --enable NLS_ISO8859_1
+          make -C linux olddefconfig
+          grep '^CONFIG_FAT_FS=y$' linux/.config
+          grep '^CONFIG_VFAT_FS=y$' linux/.config
+          grep '^CONFIG_APPENDFAT_FS=y$' linux/.config
+          grep '^CONFIG_APPENDFAT_VFAT_FS=y$' linux/.config
+          grep '^CONFIG_VIRTIO_BLK=y$' linux/.config
+
+      - name: Build bootable kernel
+        run: make -C linux -j2 bzImage
+
+      - name: Build FAT32 image and initramfs
+        run: |
+          truncate -s 64M fat.img
+          mkfs.fat -F 32 -n APPENDFAT fat.img
+
+          root=$PWD/initramfs
+          mkdir -p "$root/bin" "$root/proc" "$root/sys" "$root/dev" "$root/mnt"
+          cp /bin/busybox "$root/bin/busybox"
+          for applet in sh mount umount mkdir cat sync poweroff grep ls; do
+            ln -s busybox "$root/bin/$applet"
+          done
+
+          cat > "$root/init" <<'EOF'
+          #!/bin/sh
+          set -eu
+
+          export PATH=/bin
+          mount -t proc proc /proc
+          mount -t sysfs sysfs /sys
+          mount -t devtmpfs devtmpfs /dev
+          mkdir -p /mnt/card
+
+          grep -w vfat /proc/filesystems >/dev/null
+          grep -w appendfat /proc/filesystems >/dev/null
+
+          mount -t vfat /dev/vda /mnt/card
+          printf 'stock-to-append\n' > '/mnt/card/Long Filename From Stock.txt'
+          mkdir '/mnt/card/stock-dir'
+          printf 'made-by-stock\n' > '/mnt/card/stock-dir/origin.txt'
+          sync
+          umount /mnt/card
+
+          mount -t appendfat /dev/vda /mnt/card
+          grep -qx 'stock-to-append' '/mnt/card/Long Filename From Stock.txt'
+          grep -qx 'made-by-stock' '/mnt/card/stock-dir/origin.txt'
+          printf 'append-to-stock\n' >> '/mnt/card/Long Filename From Stock.txt'
+          printf 'made-by-appendfat\n' > '/mnt/card/Created By Appendfat.txt'
+          mkdir '/mnt/card/append-dir'
+          printf 'append-dir-ok\n' > '/mnt/card/append-dir/origin.txt'
+          sync
+          umount /mnt/card
+
+          mount -t vfat /dev/vda /mnt/card
+          grep -q '^stock-to-append$' '/mnt/card/Long Filename From Stock.txt'
+          grep -q '^append-to-stock$' '/mnt/card/Long Filename From Stock.txt'
+          grep -qx 'made-by-appendfat' '/mnt/card/Created By Appendfat.txt'
+          grep -qx 'append-dir-ok' '/mnt/card/append-dir/origin.txt'
+          sync
+          umount /mnt/card
+
+          echo APPENDFAT_QEMU_EQUIVALENCE_PASS
+          poweroff -f
+          EOF
+          chmod +x "$root/init"
+
+          (cd "$root" && find . -print0 | cpio --null -ov --format=newc | gzip -9) > initramfs.cpio.gz
+
+      - name: Boot and exercise the same image through both filesystems
+        run: |
+          set +e
+          timeout 120s qemu-system-x86_64 \
+            -machine accel=tcg \
+            -m 512M \
+            -smp 2 \
+            -nographic \
+            -no-reboot \
+            -kernel linux/arch/x86/boot/bzImage \
+            -initrd initramfs.cpio.gz \
+            -append 'console=ttyS0 rdinit=/init panic=-1' \
+            -drive file=fat.img,format=raw,if=virtio \
+            > qemu.log 2>&1
+          qemu_status=$?
+          set -e
+          cat qemu.log
+          grep -F APPENDFAT_QEMU_EQUIVALENCE_PASS qemu.log
+          if [ "$qemu_status" -ne 0 ] && [ "$qemu_status" -ne 124 ]; then
+            echo "qemu exited unexpectedly: $qemu_status" >&2
+            exit "$qemu_status"
+          fi
+
+      - name: Check resulting FAT image from userspace
+        run: fsck.fat -n -v fat.img
