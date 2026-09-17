@@ -42,14 +42,14 @@ jobs:
           make -C linux olddefconfig
           make -C linux -j2 modules_prepare
 
-      - name: Build stock and exact-copy FAT modules
+      - name: Build stock and exact-copy linked objects
         run: |
-          make -C linux -j2 M=fs/fat modules
+          make -C linux -j2 M=fs/fat fat.o vfat.o msdos.o
           rm -rf linux/fs/appendfat
           mkdir -p linux/fs/appendfat
           cp fs/appendfat/.kunitconfig linux/fs/appendfat/
           cp fs/appendfat/Kconfig fs/appendfat/Makefile fs/appendfat/*.c fs/appendfat/fat.h linux/fs/appendfat/
-          make -C linux -j2 M=fs/appendfat modules
+          make -C linux -j2 M=fs/appendfat fat.o vfat.o msdos.o
 
       - name: Generate collision inventory
         run: |
@@ -74,7 +74,7 @@ jobs:
             echo
             echo 'Generated from the exact source baseline pinned to Linux commit `238650ef6c7c7cca08e032527329424c9fbd70e5`.'
             echo
-            echo 'Both the stock `fs/fat` copy and `fs/appendfat` were compiled as modules from that same kernel tree before this inventory was produced. This is an identity/collision inventory, not an append-allocation behavior test.'
+            echo 'Both stock `fs/fat` and `fs/appendfat` were compiled into their linked module objects from that same kernel tree before this inventory was produced. The job intentionally stops before `.ko` modpost because a full-kernel `Module.symvers` is not needed to compare defined symbols. This is an identity/collision inventory, not an append-allocation behavior test.'
             echo
             echo '## Build-name collisions'
             echo
