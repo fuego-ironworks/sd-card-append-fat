@@ -6,7 +6,7 @@ Each populated folder identifies what to read, why it matters, and a small appen
 
 ## Recommended reading order
 
-1. `bsd/4.4bsd-lite2/` — small 1992 `msdosfs` FAT allocator: understand the actual FAT-chain mutation first.
+1. `bsd/early-msdosfs/` — pinned 1993 NetBSD import of Paul Popelka's October 1992 `msdosfs` code: understand the small FAT mutation path first.
 2. `linux-0.99/` — very small early Linux MSDOS/FAT implementation.
 3. `fatfs-elm-chan/` — compact embedded FAT over a narrow block-device interface.
 4. `linux-current-fat/` — production Linux allocation, mapping, cache, locking, and VFS behavior.
@@ -22,8 +22,8 @@ Each populated folder identifies what to read, why it matters, and a small appen
 - `linux-0.99/` — early Linux MSDOS/FAT implementation.
 - `linux-current-fat/` — current Linux FAT implementation.
 - `dosfstools/` — userspace FAT formatter/checker.
-- `bsd/4.4bsd-lite2/` — early BSD `msdosfs` allocator.
-- `bsd/freebsd/`, `bsd/netbsd/`, `bsd/openbsd/` — independently maintained BSD descendants.
+- `bsd/early-msdosfs/` — exact historical BSD `msdosfs` reference pinned to NetBSD's 1993 import; source notices identify Paul Popelka and October 1992.
+- `bsd/freebsd/`, `bsd/netbsd/`, `bsd/openbsd/` — independently maintained later BSD descendants.
 
 ## Teaching operating systems
 
