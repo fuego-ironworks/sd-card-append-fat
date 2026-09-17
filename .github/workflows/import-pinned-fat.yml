@@ -1,0 +1,34 @@
+name: Import pinned FAT baseline
+
+on:
+  push:
+    branches:
+      - appendfat-source-import
+    paths:
+      - .github/workflows/import-pinned-fat.yml
+
+permissions:
+  contents: write
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Import and verify pinned Linux FAT source
+        run: |
+          ./scripts/import-linux-fat.sh
+          ./scripts/verify-import-manifest.sh
+      - name: Commit exact source import
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add fs/appendfat
+          if git diff --cached --quiet; then
+            echo 'No source changes to commit'
+            exit 0
+          fi
+          git commit -m 'Import pinned Linux FAT baseline unchanged'
+          git push origin HEAD:appendfat-source-import
