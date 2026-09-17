@@ -8,7 +8,7 @@ files='.kunitconfig Kconfig Makefile cache.c dir.c fat.h fat_test.c fatent.c fil
 
 for file in $files
 do
-    manifest_line=$(grep "| \`$file\` |" "$manifest")
+    manifest_line=$(grep -F "| \`$file\` |" "$manifest")
     expected=$(printf '%s\n' "$manifest_line" | sed -n 's/.*`\([0-9a-f][0-9a-f]*\)`.*/\1/p')
 
     if [ -z "$expected" ]; then
