@@ -342,6 +342,11 @@ static int remove_original_source(const char *source,
 
     if (lstat(quarantine, &moved) != 0) {
         saved_errno = errno;
+        if (install_path(quarantine, source, false) != 0) {
+            fprintf(stderr,
+                    "%s: source verification failed; data may remain quarantined at '%s': %s\n",
+                    program_name, quarantine, strerror(errno));
+        }
         free(quarantine);
         errno = saved_errno;
         return -1;
@@ -351,8 +356,8 @@ static int remove_original_source(const char *source,
         saved_errno = EBUSY;
         if (install_path(quarantine, source, false) != 0) {
             fprintf(stderr,
-                    "%s: source path changed and replacement could not be restored '%s': %s\n",
-                    program_name, source, strerror(errno));
+                    "%s: source path changed; replacement left quarantined at '%s' because '%s' could not be restored: %s\n",
+                    program_name, quarantine, source, strerror(errno));
         }
         free(quarantine);
         errno = saved_errno;
@@ -363,8 +368,8 @@ static int remove_original_source(const char *source,
         saved_errno = errno;
         if (install_path(quarantine, source, false) != 0) {
             fprintf(stderr,
-                    "%s: source removal failed and original could not be restored '%s': %s\n",
-                    program_name, source, strerror(errno));
+                    "%s: source removal failed; original left quarantined at '%s' because '%s' could not be restored: %s\n",
+                    program_name, quarantine, source, strerror(errno));
         }
         free(quarantine);
         errno = saved_errno;
