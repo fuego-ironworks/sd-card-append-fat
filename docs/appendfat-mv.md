@@ -19,10 +19,12 @@ For a same-filesystem move it calls `rename()` and does not rewrite the file. Fo
 
 The quarantine step closes the final pathname race between verifying the source
 and deleting it. If another process replaces the source pathname before the
-quarantine rename, the replacement is detected by inode identity and restored
-rather than deleted. If a replacement appears after the original inode has
-already been quarantined, the replacement remains at the source pathname while
-the verified original is removed.
+quarantine rename, the replacement is detected by inode identity and is never
+unlinked by the mover. The mover attempts to restore it to the original path;
+if a second concurrent change prevents that restoration, the mover reports the
+quarantine pathname and fails. If a replacement appears after the original
+inode has already been quarantined, the replacement remains at the source
+pathname while the verified original is removed.
 
 If keep-size fallocate is unsupported or returns `ENOSPC`, the move fails before data copy and leaves the source untouched. This is intentional: silently falling back to ordinary incremental allocation would defeat the purpose of the tool.
 
