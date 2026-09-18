@@ -85,10 +85,16 @@ static char *destination_path(const char *source, const char *destination)
     if (entry == NULL)
         return NULL;
 
-    if (lstat(entry, &status) == 0 && S_ISLNK(status.st_mode))
-        return entry;
+    if (lstat(entry, &status) == 0) {
+        if (S_ISLNK(status.st_mode))
+            return entry;
 
-    if (lstat(entry, &status) == 0 && S_ISDIR(status.st_mode)) {
+        if (!S_ISDIR(status.st_mode)) {
+            free(entry);
+            return strdup(destination);
+        }
+
+        {
         const char *base = path_basename(source);
         size_t destination_length = strlen(destination);
         size_t base_length = strlen(base);
@@ -105,6 +111,7 @@ static char *destination_path(const char *source, const char *destination)
         snprintf(result, total, "%s%s%s", destination,
                  needs_slash ? "/" : "", base);
         return result;
+        }
     }
 
     free(entry);
