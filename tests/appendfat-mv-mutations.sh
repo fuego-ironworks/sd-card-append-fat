@@ -68,7 +68,7 @@ require_killed no-destination-fsync "$mutant"
 
 mutant="$work/no-source-unlink.c"
 cp "$source_file" "$mutant"
-sed -i '0,/if (unlink(source) != 0)/s//if (false)/' "$mutant"
+sed -i '0,/if (unlink(quarantine) != 0)/s//if (false)/' "$mutant"
 require_killed no-source-unlink "$mutant"
 
 mutant="$work/leak-temporary.c"
