@@ -4,4 +4,7 @@ Experimental append-oriented FAT filesystem work for removable SD-card storage.
 
 The production design will remain separate from stock Linux/Android FAT code. Historical and comparative implementations belong under `reference/` and are source material only unless explicitly promoted.
 
-A userspace `mv`-style experiment that reserves the destination with `FALLOC_FL_KEEP_SIZE` before a cross-filesystem copy is documented in [`docs/appendfat-mv.md`](docs/appendfat-mv.md).
+Userspace experiments are kept separate from kernel appendfat semantics:
+
+- [fallocate-aware `mv` experiment](docs/appendfat-mv.md), which requires `FALLOC_FL_KEEP_SIZE`;
+- [pre-zeroed fixed-size append arena](docs/prezeroed-userspace-arena.md) for storage paths where keep-size fallocate is unavailable.
