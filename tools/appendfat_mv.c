@@ -64,7 +64,7 @@ static char *destination_path(const char *source, const char *destination)
 {
     struct stat status;
 
-    if (stat(destination, &status) == 0 && S_ISDIR(status.st_mode)) {
+    if (lstat(destination, &status) == 0 && S_ISDIR(status.st_mode)) {
         const char *base = path_basename(source);
         size_t destination_length = strlen(destination);
         size_t base_length = strlen(base);
