@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -274,8 +275,19 @@ static int install_path(const char *source, const char *destination,
     if (allow_replace)
         return rename(source, destination);
 
+#if defined(__ANDROID__)
+# if defined(SYS_renameat2)
+    return (int)syscall(SYS_renameat2,
+                        AT_FDCWD, source, AT_FDCWD, destination,
+                        RENAME_NOREPLACE);
+# else
+    errno = ENOSYS;
+    return -1;
+# endif
+#else
     return renameat2(AT_FDCWD, source, AT_FDCWD, destination,
                      RENAME_NOREPLACE);
+#endif
 }
 
 static int cross_filesystem_move(const char *source, const char *destination,
