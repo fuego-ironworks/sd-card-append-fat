@@ -78,7 +78,13 @@ require_killed leak-temporary "$mutant"
 
 mutant="$work/ignore-source-change.c"
 cp "$source_file" "$mutant"
-sed -i     -e 's/final_source_status.st_size != source_status.st_size ||/false ||/'     -e 's/final_source_status.st_mtim.tv_sec != source_status.st_mtim.tv_sec ||/false ||/'     -e 's/final_source_status.st_mtim.tv_nsec != source_status.st_mtim.tv_nsec)/false)/'     "$mutant"
+sed -i \
+    -e 's/final_source_status.st_size != source_status.st_size ||/false ||/' \
+    -e 's/final_source_status.st_mtim.tv_sec != source_status.st_mtim.tv_sec ||/false ||/' \
+    -e 's/final_source_status.st_mtim.tv_nsec != source_status.st_mtim.tv_nsec ||/false ||/' \
+    -e 's/final_source_status.st_ctim.tv_sec != source_status.st_ctim.tv_sec ||/false ||/' \
+    -e 's/final_source_status.st_ctim.tv_nsec != source_status.st_ctim.tv_nsec)/false)/' \
+    "$mutant"
 require_killed ignore-source-change "$mutant"
 
 printf 'appendfat_mv mutation tests: PASS\n'

@@ -459,4 +459,37 @@ test ! -e "$work/mutate-destination"
 assert_no_temporary "$work/mutate-destination"
 pass "source growth during copy prevents publication and deletion"
 
+dd if=/dev/urandom of="$work/mutate-same-size-source" bs=1M count=2 status=none
+cp -p "$work/mutate-same-size-source" "$work/mutate-same-size-time-reference"
+mutate_same_marker="$work/mutate-same-size-marker"
+env \
+    APPENDFAT_MV_FAULT=pause_source_read \
+    APPENDFAT_MV_MARKER="$mutate_same_marker" \
+    APPENDFAT_MV_SOURCE="$work/mutate-same-size-source" \
+    LD_PRELOAD="$faults" \
+    "$binary" --force-copy \
+    "$work/mutate-same-size-source" "$work/mutate-same-size-destination" \
+    >"$work/mutate-same-size.stdout" 2>"$work/mutate-same-size.stderr" &
+mutate_same_pid=$!
+
+i=0
+while test ! -e "$mutate_same_marker" && test "$i" -lt 200
+do
+    sleep 0.01
+    i=$((i + 1))
+done
+test -e "$mutate_same_marker" || fail "same-size mutation test did not reach source read"
+
+printf 'Z' | dd of="$work/mutate-same-size-source" bs=1 seek=1048576 conv=notrunc status=none
+touch -r "$work/mutate-same-size-time-reference" "$work/mutate-same-size-source"
+
+if wait "$mutate_same_pid"; then
+    fail "same-size source mutation with restored mtime unexpectedly succeeded"
+fi
+test -f "$work/mutate-same-size-source"
+test ! -e "$work/mutate-same-size-destination"
+assert_no_temporary "$work/mutate-same-size-destination"
+assert_no_source_quarantine "$work/mutate-same-size-source"
+pass "ctime detects same-size source rewrite even after mtime is restored"
+
 printf 'appendfat_mv host and fault-injection tests: PASS\n'

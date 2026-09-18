@@ -141,6 +141,7 @@ On the currently observed Android/FUSE removable-storage path, the expected rese
 - source-unlink failure, which must leave both complete copies;
 - a destination that appears during the copy, which must not be overwritten;
 - source growth during the copy, which must prevent publication and deletion;
+- a same-size in-place rewrite with the original mtime restored, which must still be detected through ctime;
 - source-path replacement immediately before quarantine, which must be restored rather than deleted;
 - source-path replacement after quarantine but before unlink, which must survive untouched;
 - temporary-file cleanup after every pre-publication failure;

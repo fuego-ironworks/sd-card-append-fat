@@ -461,7 +461,9 @@ static int cross_filesystem_move(const char *source, const char *destination,
     }
     if (final_source_status.st_size != source_status.st_size ||
         final_source_status.st_mtim.tv_sec != source_status.st_mtim.tv_sec ||
-        final_source_status.st_mtim.tv_nsec != source_status.st_mtim.tv_nsec) {
+        final_source_status.st_mtim.tv_nsec != source_status.st_mtim.tv_nsec ||
+        final_source_status.st_ctim.tv_sec != source_status.st_ctim.tv_sec ||
+        final_source_status.st_ctim.tv_nsec != source_status.st_ctim.tv_nsec) {
         errno = EBUSY;
         report_errno("source changed while moving", source);
         goto done;
