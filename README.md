@@ -6,4 +6,5 @@ The production design will remain separate from stock Linux/Android FAT code. Hi
 
 Userspace experiments are kept separate from kernel appendfat semantics:
 
-- [pre-zeroed fixed-size append arena](docs/prezeroed-userspace-arena.md) for storage paths where keep-size fallocate is unavailable;
+- [fallocate-aware `mv` experiment](docs/appendfat-mv.md), which requires `FALLOC_FL_KEEP_SIZE`;
+- [pre-zeroed fixed-size append arena](docs/prezeroed-userspace-arena.md) for storage paths where keep-size fallocate is unavailable.
