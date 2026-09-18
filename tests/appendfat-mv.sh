@@ -7,6 +7,7 @@ trap 'rm -rf "$work"' EXIT HUP INT TERM
 
 binary="$work/appendfat_mv"
 faults="$work/appendfat-mv-faults.so"
+source_under_test=${APPENDFAT_MV_SOURCE_FILE:-"$root/tools/appendfat_mv.c"}
 
 fail()
 {
@@ -54,7 +55,7 @@ build()
 {
     ${CC:-cc} \
         -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror \
-        "$root/tools/appendfat_mv.c" \
+        "$source_under_test" \
         -o "$binary"
 
     ${CC:-cc} \
@@ -201,6 +202,7 @@ fault_case()
     errno_name=$2
     source="$work/fault-$mode-source"
     destination="$work/fault-$mode-destination"
+    marker="$work/fault-$mode-fired"
 
     printf 'fault case %s\n' "$mode" > "$source"
     cp "$source" "$source.expected"
@@ -208,9 +210,11 @@ fault_case()
     expect_fail env \
         APPENDFAT_MV_FAULT="$mode" \
         APPENDFAT_MV_SOURCE="$source" \
+        APPENDFAT_MV_MARKER="$marker" \
         LD_PRELOAD="$faults" \
         "$binary" --force-copy "$source" "$destination"
 
+    test -e "$marker" || fail "$errno_name injector did not fire"
     cmp "$source.expected" "$source"
     test ! -e "$destination"
     assert_no_temporary "$destination"
@@ -226,8 +230,10 @@ printf 'interrupted allocation\n' > "$work/eintr-source"
 cp "$work/eintr-source" "$work/eintr-expected"
 env \
     APPENDFAT_MV_FAULT=fallocate_eintr_once \
+    APPENDFAT_MV_MARKER="$work/eintr-fired" \
     LD_PRELOAD="$faults" \
     "$binary" --force-copy "$work/eintr-source" "$work/eintr-destination"
+test -e "$work/eintr-fired" || fail "Interrupted system call (EINTR) injector did not fire"
 cmp "$work/eintr-expected" "$work/eintr-destination"
 test ! -e "$work/eintr-source"
 pass "Interrupted system call (EINTR) during reservation is retried"
@@ -237,11 +243,43 @@ cp "$work/unlink-source" "$work/unlink-expected"
 expect_fail env \
     APPENDFAT_MV_FAULT=source_unlink_eio \
     APPENDFAT_MV_SOURCE="$work/unlink-source" \
+    APPENDFAT_MV_MARKER="$work/unlink-fired" \
     LD_PRELOAD="$faults" \
     "$binary" --force-copy "$work/unlink-source" "$work/unlink-destination"
+test -e "$work/unlink-fired" || fail "source unlink injector did not fire"
 cmp "$work/unlink-expected" "$work/unlink-source"
 cmp "$work/unlink-expected" "$work/unlink-destination"
 pass "source unlink failure leaves both complete copies"
+
+printf 'destination parent sync failure\n' > "$work/destination-parent-source"
+cp "$work/destination-parent-source" "$work/destination-parent-expected"
+expect_fail env \
+    APPENDFAT_MV_FAULT=destination_parent_fsync_eio \
+    APPENDFAT_MV_SOURCE="$work/destination-parent-source" \
+    APPENDFAT_MV_MARKER="$work/destination-parent-fired" \
+    LD_PRELOAD="$faults" \
+    "$binary" --force-copy \
+    "$work/destination-parent-source" "$work/destination-parent-destination"
+test -e "$work/destination-parent-fired" ||
+    fail "destination parent sync injector did not fire"
+cmp "$work/destination-parent-expected" "$work/destination-parent-source"
+cmp "$work/destination-parent-expected" "$work/destination-parent-destination"
+pass "destination parent sync failure leaves both complete copies"
+
+printf 'source parent sync failure\n' > "$work/source-parent-source"
+cp "$work/source-parent-source" "$work/source-parent-expected"
+expect_fail env \
+    APPENDFAT_MV_FAULT=source_parent_fsync_eio \
+    APPENDFAT_MV_SOURCE="$work/source-parent-source" \
+    APPENDFAT_MV_MARKER="$work/source-parent-fired" \
+    LD_PRELOAD="$faults" \
+    "$binary" --force-copy \
+    "$work/source-parent-source" "$work/source-parent-destination"
+test -e "$work/source-parent-fired" ||
+    fail "source parent sync injector did not fire"
+test ! -e "$work/source-parent-source"
+cmp "$work/source-parent-expected" "$work/source-parent-destination"
+pass "source parent sync failure reports uncertainty after source removal"
 
 dd if=/dev/urandom of="$work/race-source" bs=1M count=2 status=none
 cp "$work/race-source" "$work/race-expected"
