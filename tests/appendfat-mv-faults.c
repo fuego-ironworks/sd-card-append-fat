@@ -16,6 +16,7 @@ static int fallocate_calls;
 static int fsync_calls;
 static int read_pauses;
 static int install_pauses;
+static int unlink_pauses;
 
 static const char *fault_mode(void)
 {
@@ -31,6 +32,24 @@ static bool mode_is(const char *name)
 static bool is_temporary_path(const char *path)
 {
     return path != NULL && strstr(path, ".appendfat_mv.tmp.") != NULL;
+}
+
+static bool is_source_removal_path(const char *path)
+{
+    const char *source = getenv("APPENDFAT_MV_SOURCE");
+    size_t source_length;
+
+    if (source == NULL || *source == '\0' || path == NULL)
+        return false;
+
+    if (strcmp(path, source) == 0)
+        return true;
+
+    source_length = strlen(source);
+    return strncmp(path, source, source_length) == 0 &&
+           strncmp(path + source_length,
+                   ".appendfat_mv.source.",
+                   strlen(".appendfat_mv.source.")) == 0;
 }
 
 static void sleep_milliseconds(long milliseconds)
@@ -176,8 +195,13 @@ int unlink(const char *path)
         real_unlink = dlsym(RTLD_NEXT, "unlink");
 
     source = getenv("APPENDFAT_MV_SOURCE");
+    if (mode_is("pause_before_source_unlink") &&
+        is_source_removal_path(path) && unlink_pauses++ == 0) {
+        create_marker();
+        sleep_milliseconds(750);
+    }
     if (mode_is("source_unlink_eio") && source != NULL &&
-        strcmp(path, source) == 0) {
+        is_source_removal_path(path)) {
         create_marker();
         errno = EIO;
         return -1;
