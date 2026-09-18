@@ -40,3 +40,6 @@ jobs:
 
       - name: Characterize FALLOC_FL_KEEP_SIZE compatibility
         run: sh tests/qemu-keep-size.sh linux
+
+      - name: Characterize reservation persistence across clean unmount
+        run: sh tests/qemu-keep-size-characterization.sh linux
