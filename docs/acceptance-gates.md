@@ -53,6 +53,23 @@ change. It covers:
 - stock-vfat remount after appendfat reservation;
 - host `fsck.fat -n -v`.
 
+`tests/qemu-keep-size-characterization.sh` separately pins the allocation
+state at three clean boundaries: unused reservation, partial logical
+consumption, and full logical consumption. In the pinned 64 MiB FAT32 fixture,
+the live appendfat reservations occupy 512 and 256 512-byte blocks before
+unmount. By the next stock-`vfat` mount, the unused excess is gone: the
+six-byte file occupies one block and the zero-length file occupies none. The
+host `fsck.fat -n -v` invocation immediately between each guest phase must
+return status 0.
+
+That means this fixture does **not** establish a persistent on-disk append
+reservation across a clean unmount/remount boundary. The clean `fsck.fat`
+result must not be described as evidence that stock tools accept a file chain
+that remains allocated past logical EOF; the excess reservation is no longer
+present by the remount check. Keep-size allocation can still be evaluated as
+a mounted-session batching mechanism, but persistence requires a different
+design or a separate on-disk representation.
+
 The same fixture is intended to remain green when reservation batching is
 introduced. It does not by itself prove a future automatic reserve-ahead
 policy.
