@@ -1,0 +1,28 @@
+name: appendfat_mv host test
+
+on:
+  push:
+    paths:
+      - 'tools/appendfat_mv.c'
+      - 'tests/appendfat-mv.sh'
+      - 'docs/appendfat-mv.md'
+      - '.github/workflows/appendfat-mv.yml'
+  pull_request:
+    paths:
+      - 'tools/appendfat_mv.c'
+      - 'tests/appendfat-mv.sh'
+      - 'docs/appendfat-mv.md'
+      - '.github/workflows/appendfat-mv.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  host-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out appendfat repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Build and exercise appendfat_mv
+        run: sh tests/appendfat-mv.sh
