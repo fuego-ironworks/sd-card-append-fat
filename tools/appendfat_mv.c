@@ -90,9 +90,9 @@ static int same_file(const char *source, const char *destination)
     struct stat source_status;
     struct stat destination_status;
 
-    if (stat(source, &source_status) != 0)
+    if (lstat(source, &source_status) != 0)
         return 0;
-    if (stat(destination, &destination_status) != 0)
+    if (lstat(destination, &destination_status) != 0)
         return 0;
 
     return source_status.st_dev == destination_status.st_dev &&
