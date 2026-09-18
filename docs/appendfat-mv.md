@@ -12,8 +12,17 @@ For a same-filesystem move it calls `rename()` and does not rewrite the file. Fo
 6. `fsync()`s the destination;
 7. installs the temporary file with `RENAME_NOREPLACE` by default, so a destination that already exists — including one created during the copy — is not overwritten;
 8. syncs the destination directory after publication;
-9. removes the source only after the destination has been installed; and
-10. syncs the source directory after removal.
+9. atomically renames the source pathname into a private same-directory quarantine name;
+10. verifies that the quarantined inode is the exact inode that was copied;
+11. removes only that verified quarantined inode; and
+12. syncs the source directory after removal.
+
+The quarantine step closes the final pathname race between verifying the source
+and deleting it. If another process replaces the source pathname before the
+quarantine rename, the replacement is detected by inode identity and restored
+rather than deleted. If a replacement appears after the original inode has
+already been quarantined, the replacement remains at the source pathname while
+the verified original is removed.
 
 If keep-size fallocate is unsupported or returns `ENOSPC`, the move fails before data copy and leaves the source untouched. This is intentional: silently falling back to ordinary incremental allocation would defeat the purpose of the tool.
 
@@ -125,6 +134,9 @@ On the currently observed Android/FUSE removable-storage path, the expected rese
 - source-unlink failure, which must leave both complete copies;
 - a destination that appears during the copy, which must not be overwritten;
 - source growth during the copy, which must prevent publication and deletion;
-- temporary-file cleanup after every pre-publication failure.
+- source-path replacement immediately before quarantine, which must be restored rather than deleted;
+- source-path replacement after quarantine but before unlink, which must survive untouched;
+- temporary-file cleanup after every pre-publication failure;
+- source-quarantine cleanup after successful moves.
 
 The fault cases are injected into the process rather than induced by damaging a filesystem.
