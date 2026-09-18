@@ -89,28 +89,23 @@ static char *destination_path(const char *source, const char *destination)
         if (S_ISLNK(status.st_mode))
             return entry;
 
-        if (!S_ISDIR(status.st_mode)) {
+        if (S_ISDIR(status.st_mode)) {
+            const char *base = path_basename(source);
+            size_t destination_length = strlen(destination);
+            size_t base_length = strlen(base);
+            bool needs_slash = destination_length > 0 &&
+                               destination[destination_length - 1] != '/';
+            size_t total = destination_length + (needs_slash ? 1U : 0U) +
+                           base_length + 1U;
+            char *result = malloc(total);
+
             free(entry);
-            return strdup(destination);
-        }
+            if (result == NULL)
+                return NULL;
 
-        {
-        const char *base = path_basename(source);
-        size_t destination_length = strlen(destination);
-        size_t base_length = strlen(base);
-        bool needs_slash = destination_length > 0 &&
-                           destination[destination_length - 1] != '/';
-        size_t total = destination_length + (needs_slash ? 1U : 0U) +
-                       base_length + 1U;
-        char *result = malloc(total);
-
-        free(entry);
-        if (result == NULL)
-            return NULL;
-
-        snprintf(result, total, "%s%s%s", destination,
-                 needs_slash ? "/" : "", base);
-        return result;
+            snprintf(result, total, "%s%s%s", destination,
+                     needs_slash ? "/" : "", base);
+            return result;
         }
     }
 
