@@ -60,11 +60,35 @@ static const char *path_basename(const char *path)
     return start;
 }
 
+static char *path_entry_without_trailing_slashes(const char *path)
+{
+    size_t length = strlen(path);
+    char *result;
+
+    while (length > 1U && path[length - 1U] == '/')
+        --length;
+
+    result = malloc(length + 1U);
+    if (result == NULL)
+        return NULL;
+
+    memcpy(result, path, length);
+    result[length] = '\0';
+    return result;
+}
+
 static char *destination_path(const char *source, const char *destination)
 {
     struct stat status;
+    char *entry = path_entry_without_trailing_slashes(destination);
 
-    if (lstat(destination, &status) == 0 && S_ISDIR(status.st_mode)) {
+    if (entry == NULL)
+        return NULL;
+
+    if (lstat(entry, &status) == 0 && S_ISLNK(status.st_mode))
+        return entry;
+
+    if (lstat(entry, &status) == 0 && S_ISDIR(status.st_mode)) {
         const char *base = path_basename(source);
         size_t destination_length = strlen(destination);
         size_t base_length = strlen(base);
@@ -74,6 +98,7 @@ static char *destination_path(const char *source, const char *destination)
                        base_length + 1U;
         char *result = malloc(total);
 
+        free(entry);
         if (result == NULL)
             return NULL;
 
@@ -82,6 +107,7 @@ static char *destination_path(const char *source, const char *destination)
         return result;
     }
 
+    free(entry);
     return strdup(destination);
 }
 

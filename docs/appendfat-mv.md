@@ -56,9 +56,9 @@ An existing destination directory is also accepted:
 ```
 
 Destination symlinks are deliberately not followed. A symlink supplied as the
-destination is treated as an existing path and is refused by default. With
-`--replace`, replacement applies to the symlink path itself rather than to
-its target.
+destination is treated as an existing path and is refused by default, including
+when the argument has trailing slashes. With `--replace`, replacement applies
+to the symlink path itself rather than to its target.
 
 `--force-copy` bypasses the same-filesystem rename fast path. It exists mainly for testing the reservation/copy path:
 
