@@ -322,6 +322,42 @@ cmp "$work/race-destination-expected" "$work/race-destination"
 assert_no_temporary "$work/race-destination"
 pass "destination created during copy is not overwritten"
 
+dd if=/dev/urandom of="$work/quarantine-race-source" bs=1M count=2 status=none
+cp "$work/quarantine-race-source" "$work/quarantine-race-expected"
+quarantine_race_marker="$work/quarantine-race-marker"
+env \
+    APPENDFAT_MV_FAULT=pause_before_source_quarantine \
+    APPENDFAT_MV_MARKER="$quarantine_race_marker" \
+    APPENDFAT_MV_SOURCE="$work/quarantine-race-source" \
+    LD_PRELOAD="$faults" \
+    "$binary" --force-copy \
+    "$work/quarantine-race-source" "$work/quarantine-race-destination" \
+    >"$work/quarantine-race.stdout" 2>"$work/quarantine-race.stderr" &
+quarantine_race_pid=$!
+
+i=0
+while test ! -e "$quarantine_race_marker" && test "$i" -lt 200
+do
+    sleep 0.01
+    i=$((i + 1))
+done
+test -e "$quarantine_race_marker" || fail "source-quarantine race did not reach rename boundary"
+
+mv "$work/quarantine-race-source" "$work/quarantine-race-original-moved"
+printf 'replacement before quarantine rename\n' > "$work/quarantine-race-source"
+
+if wait "$quarantine_race_pid"; then
+    fail "source replacement before quarantine rename unexpectedly succeeded"
+fi
+
+cmp "$work/quarantine-race-expected" "$work/quarantine-race-destination"
+printf 'replacement before quarantine rename\n' > "$work/quarantine-race-replacement-expected"
+cmp "$work/quarantine-race-replacement-expected" "$work/quarantine-race-source"
+cmp "$work/quarantine-race-expected" "$work/quarantine-race-original-moved"
+assert_no_temporary "$work/quarantine-race-destination"
+assert_no_source_quarantine "$work/quarantine-race-source"
+pass "source replacement before quarantine is restored rather than deleted"
+
 dd if=/dev/urandom of="$work/remove-race-source" bs=1M count=2 status=none
 cp "$work/remove-race-source" "$work/remove-race-expected"
 remove_race_marker="$work/remove-race-marker"
