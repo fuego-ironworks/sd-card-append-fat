@@ -91,15 +91,29 @@ cleanup()
 
     if test -d "$scratch" && test -f "$marker" &&
        test "$(cat "$marker" 2>/dev/null || true)" = "$token"; then
-        rm -f             "$scratch/rename-source"             "$scratch/rename-destination"             "$scratch/reserved-destination"             "$marker"
+        unexpected=$(find "$scratch" -mindepth 1 -maxdepth 1 \
+            ! -name '.appendfat-mv-owned' \
+            ! -name 'rename-source' \
+            ! -name 'rename-destination' \
+            ! -name 'reserved-destination' \
+            -print -quit)
 
-        if rmdir "$scratch" 2>/dev/null; then
-            :
+        if test -n "$unexpected"; then
+            printf '%bNOTE%b  unexpected scratch content; no SD cleanup attempted: %s\n' \
+                "$yellow" "$reset" "$unexpected" >&2
         else
-            printf '%bNOTE%b  scratch directory was not empty; left in place: %s\n'                 "$yellow" "$reset" "$scratch" >&2
+            rm -f \
+                "$scratch/rename-source" \
+                "$scratch/rename-destination" \
+                "$scratch/reserved-destination" \
+                "$marker"
+            rmdir "$scratch" 2>/dev/null ||
+                printf '%bNOTE%b  scratch directory could not be removed; left in place: %s\n' \
+                    "$yellow" "$reset" "$scratch" >&2
         fi
     else
-        printf '%bNOTE%b  ownership marker missing or changed; no SD cleanup attempted: %s\n'             "$yellow" "$reset" "$scratch" >&2
+        printf '%bNOTE%b  ownership marker missing or changed; no SD cleanup attempted: %s\n' \
+            "$yellow" "$reset" "$scratch" >&2
     fi
 
     exit "$status"
