@@ -48,6 +48,17 @@ An existing destination directory is also accepted:
 ./appendfat_mv --force-copy source destination
 ```
 
+## Current physical-phone result
+
+The stock removable-storage path on the target phone does not currently satisfy
+the reservation precondition: the 2026-09-18 physical probe returned
+`EOPNOTSUPP` for `FALLOC_FL_KEEP_SIZE` through the Termux/Android FUSE view.
+That is an expected fail-closed case for this utility, not appendfat evidence.
+
+See [the retained phone probe](phone-keep-size-probe-2026-09-18.md). The same
+probe must be repeated against an actual physical appendfat mount before this
+tool is considered usable for the target SD-card path.
+
 ## Evidence boundary
 
 `FALLOC_FL_KEEP_SIZE` reserves filesystem allocation beyond logical EOF. On FAT this can allocate the file's FAT cluster chain before the data copy, so later writes can consume already linked clusters rather than extending the chain one cluster at a time.
