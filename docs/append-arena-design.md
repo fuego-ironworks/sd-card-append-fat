@@ -36,6 +36,48 @@ The current `fat_fallocate()` keep-size loop repeatedly calls `appendfat_add_clu
 
 So there is a concrete optimization seam: the filesystem already knows how to represent preallocated capacity, while the existing path performs that reservation one cluster at a time.
 
+
+## Source trail and higher-level storage intent
+
+Keep the layers visible rather than treating "fallocate" as one monolithic operation.
+
+Useful source trail:
+
+- util-linux command: `sys-utils/fallocate.c`
+  <https://github.com/util-linux/util-linux/blob/master/sys-utils/fallocate.c>
+- glibc Linux wrapper:
+  <https://github.com/bminor/glibc/blob/master/sysdeps/unix/sysv/linux/fallocate.c>
+- Linux VFS dispatch in `fs/open.c`:
+  <https://github.com/torvalds/linux/blob/master/fs/open.c>
+- Linux FAT implementation in `fs/fat/file.c`:
+  <https://github.com/torvalds/linux/blob/master/fs/fat/file.c>
+
+For this project, the interesting semantic boundary is not the command-line spelling. A higher-level program may want to state something like:
+
+```text
+store this append log
+reserve backing space ahead of writes
+keep its visible length unchanged until bytes are written
+prefer sequential allocation
+```
+
+Those are storage requirements or preferences. They should not force the source language to name `fallocate`, libc, a syscall number, FAT, or `appendfat_add_cluster()`.
+
+A later architecture/lowering layer may choose:
+
+- Linux `fallocate(..., FALLOC_FL_KEEP_SIZE)`;
+- an appendfat-specific reservation operation;
+- another filesystem primitive on another target;
+- or an explicit unsupported result when the target cannot preserve the requested semantics.
+
+Keep requirements separate from preferences. "Must keep visible length unchanged" and "prefer sequential allocation" need not have the same failure behavior.
+
+Capability also depends on the access path. A filesystem or kernel may implement the primitive while a mediated Android/FUSE-style path rejects it before that implementation is reached. Record the filesystem, mount/interface, kernel, and device facts separately.
+
+Finally, cluster allocation is a filesystem-level claim. It does not by itself prove physical NAND placement, erase-block placement, or physical contiguity behind a flash translation layer.
+
+This same example is mirrored into the Idriç/Adriç design notes and the ComputerScience architecture-search notes so the high-level intent, planner choice, and concrete filesystem experiment remain cross-linked rather than existing only in conversation.
+
 ## Terms
 
 Use these terms precisely:
