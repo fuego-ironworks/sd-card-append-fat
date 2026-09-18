@@ -17,6 +17,7 @@ static int fsync_calls;
 static int read_pauses;
 static int install_pauses;
 static int unlink_pauses;
+static int quarantine_pauses;
 
 static const char *fault_mode(void)
 {
@@ -165,6 +166,14 @@ int renameat2(int old_dir_fd, const char *old_path,
             create_marker();
             sleep_milliseconds(750);
         }
+    }
+
+    if (mode_is("pause_before_source_quarantine") &&
+        is_source_removal_path(new_path) &&
+        strcmp(new_path, getenv("APPENDFAT_MV_SOURCE")) != 0 &&
+        quarantine_pauses++ == 0) {
+        create_marker();
+        sleep_milliseconds(750);
     }
 
     return real_renameat2(old_dir_fd, old_path, new_dir_fd, new_path, flags);
