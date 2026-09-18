@@ -6,6 +6,8 @@ on:
       - 'tools/appendfat_mv.c'
       - 'tests/appendfat-mv.sh'
       - 'tests/appendfat-mv-faults.c'
+      - 'tests/appendfat-mv-mutations.sh'
+      - 'tests/appendfat-mv-mutations.sh'
       - 'tests/physical-sd-readonly-preflight.sh'
       - 'tests/physical-appendfat-mv-scratch.sh'
       - 'docs/appendfat-mv.md'
@@ -43,6 +45,16 @@ jobs:
         env:
           CC: ${{ matrix.compiler }}
         run: sh tests/appendfat-mv.sh
+
+  mutation-test:
+    name: dangerous mutants must fail
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out appendfat repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Prove the safety suite rejects known-bad movers
+        run: sh tests/appendfat-mv-mutations.sh
 
   armv7-android-compile:
     name: Android ARMv7 / Thumb-2 compile
