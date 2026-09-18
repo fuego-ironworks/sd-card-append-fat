@@ -27,7 +27,7 @@ permissions:
 
 jobs:
   host-test:
-    name: host safety tests (${{ matrix.compiler ${{)
+    name: host safety tests (${{ matrix.compiler }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -41,7 +41,7 @@ jobs:
 
       - name: Build and exercise appendfat_mv
         env:
-          CC: ${{ matrix.compiler ${{
+          CC: ${{ matrix.compiler }}
         run: sh tests/appendfat-mv.sh
 
   physical-script-static-check:
