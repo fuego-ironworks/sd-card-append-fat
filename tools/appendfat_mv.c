@@ -117,6 +117,24 @@ static char *temporary_path(const char *destination, unsigned attempt)
     return path;
 }
 
+static char *source_quarantine_path(const char *source, unsigned attempt)
+{
+    int needed = snprintf(NULL, 0, "%s.appendfat_mv.source.%ld.%u",
+                          source, (long)getpid(), attempt);
+    char *path;
+
+    if (needed < 0)
+        return NULL;
+
+    path = malloc((size_t)needed + 1U);
+    if (path == NULL)
+        return NULL;
+
+    snprintf(path, (size_t)needed + 1U, "%s.appendfat_mv.source.%ld.%u",
+             source, (long)getpid(), attempt);
+    return path;
+}
+
 static int create_temporary(const char *destination, mode_t mode,
                             char **path_out)
 {
@@ -290,6 +308,73 @@ static int install_path(const char *source, const char *destination,
 #endif
 }
 
+static int remove_original_source(const char *source,
+                                  const struct stat *expected)
+{
+    struct stat moved;
+    char *quarantine = NULL;
+    unsigned attempt;
+    int saved_errno;
+
+    for (attempt = 0; attempt < TEMP_ATTEMPTS; ++attempt) {
+        quarantine = source_quarantine_path(source, attempt);
+        if (quarantine == NULL) {
+            errno = ENOMEM;
+            return -1;
+        }
+
+        if (install_path(source, quarantine, false) == 0)
+            break;
+
+        saved_errno = errno;
+        free(quarantine);
+        quarantine = NULL;
+        if (saved_errno != EEXIST) {
+            errno = saved_errno;
+            return -1;
+        }
+    }
+
+    if (quarantine == NULL) {
+        errno = EEXIST;
+        return -1;
+    }
+
+    if (lstat(quarantine, &moved) != 0) {
+        saved_errno = errno;
+        free(quarantine);
+        errno = saved_errno;
+        return -1;
+    }
+
+    if (moved.st_dev != expected->st_dev || moved.st_ino != expected->st_ino) {
+        saved_errno = EBUSY;
+        if (install_path(quarantine, source, false) != 0) {
+            fprintf(stderr,
+                    "%s: source path changed and replacement could not be restored '%s': %s\n",
+                    program_name, source, strerror(errno));
+        }
+        free(quarantine);
+        errno = saved_errno;
+        return -1;
+    }
+
+    if (unlink(quarantine) != 0) {
+        saved_errno = errno;
+        if (install_path(quarantine, source, false) != 0) {
+            fprintf(stderr,
+                    "%s: source removal failed and original could not be restored '%s': %s\n",
+                    program_name, source, strerror(errno));
+        }
+        free(quarantine);
+        errno = saved_errno;
+        return -1;
+    }
+
+    free(quarantine);
+    return 0;
+}
+
 static int cross_filesystem_move(const char *source, const char *destination,
                                  bool allow_replace)
 {
@@ -391,8 +476,9 @@ static int cross_filesystem_move(const char *source, const char *destination,
         goto done;
     }
 
-    if (unlink(source) != 0) {
-        report_errno("destination is complete but source could not be removed", source);
+    if (remove_original_source(source, &source_status) != 0) {
+        report_errno("destination is complete but original source could not be removed safely",
+                     source);
         goto done;
     }
 
