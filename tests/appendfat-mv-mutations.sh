@@ -53,7 +53,7 @@ require_killed()
 
 mutant="$work/no-clobber.c"
 cp "$source_file" "$mutant"
-sed -i '0,/if (allow_replace)/s//if (true)/' "$mutant"
+sed -i '0,/if (allow_replace)/s//if (allow_replace || !allow_replace)/' "$mutant"
 require_killed no-clobber "$mutant"
 
 mutant="$work/no-reservation.c"
@@ -73,7 +73,7 @@ require_killed no-source-unlink "$mutant"
 
 mutant="$work/leak-temporary.c"
 cp "$source_file" "$mutant"
-sed -i '0,/if (!destination_installed)/s//if (false)/' "$mutant"
+sed -i '0,/if (!destination_installed)/s//if (destination_installed \&\& !destination_installed)/' "$mutant"
 require_killed leak-temporary "$mutant"
 
 mutant="$work/ignore-source-change.c"
