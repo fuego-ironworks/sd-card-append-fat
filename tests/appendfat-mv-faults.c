@@ -83,14 +83,17 @@ int fallocate(int fd, int mode, off_t offset, off_t length)
 
     ++fallocate_calls;
     if (mode_is("fallocate_eopnotsupp")) {
+        create_marker();
         errno = EOPNOTSUPP;
         return -1;
     }
     if (mode_is("fallocate_enospc")) {
+        create_marker();
         errno = ENOSPC;
         return -1;
     }
     if (mode_is("fallocate_eintr_once") && fallocate_calls == 1) {
+        create_marker();
         errno = EINTR;
         return -1;
     }
@@ -107,6 +110,17 @@ int fsync(int fd)
 
     ++fsync_calls;
     if (mode_is("fsync_eio") && fsync_calls == 1) {
+        create_marker();
+        errno = EIO;
+        return -1;
+    }
+    if (mode_is("destination_parent_fsync_eio") && fsync_calls == 2) {
+        create_marker();
+        errno = EIO;
+        return -1;
+    }
+    if (mode_is("source_parent_fsync_eio") && fsync_calls == 3) {
+        create_marker();
         errno = EIO;
         return -1;
     }
@@ -124,6 +138,7 @@ int renameat2(int old_dir_fd, const char *old_path,
 
     if (is_temporary_path(old_path)) {
         if (mode_is("install_eio")) {
+            create_marker();
             errno = EIO;
             return -1;
         }
@@ -144,6 +159,7 @@ int rename(const char *old_path, const char *new_path)
         real_rename = dlsym(RTLD_NEXT, "rename");
 
     if (is_temporary_path(old_path) && mode_is("install_eio")) {
+        create_marker();
         errno = EIO;
         return -1;
     }
@@ -162,6 +178,7 @@ int unlink(const char *path)
     source = getenv("APPENDFAT_MV_SOURCE");
     if (mode_is("source_unlink_eio") && source != NULL &&
         strcmp(path, source) == 0) {
+        create_marker();
         errno = EIO;
         return -1;
     }
