@@ -63,12 +63,16 @@ policy.
 syncs it, then the host kills QEMU with `SIGKILL` before guest unmount. An
 immediate read-only `fsck.fat -n -v` must observe the expected dirty bit rather
 than being treated as a clean-unmount check. The unchanged image then boots
-through stock `vfat`, verifies the synced data, and cleanly unmounts. A final
-host `fsck.fat -n -v` must then pass.
+through stock `vfat`, verifies the synced data, and cleanly unmounts. Because
+that mount/unmount is not assumed to normalize every on-disk crash marker, the
+host then runs an explicit `fsck.fat -a -v` recovery step. A final read-only
+`fsck.fat -n -v` must pass.
 
 This establishes one abrupt-power-loss boundary: already-synced data survives
-an unclean VM termination, stock `vfat` can recover the dirty-but-synced image,
-and the clean stock unmount leaves an image accepted by `fsck.fat`. It does **not** claim crash correctness at arbitrary
+an unclean VM termination, stock `vfat` can read the dirty-but-synced image,
+and an explicit filesystem-repair step returns the image to a clean state
+accepted by `fsck.fat`. It does **not** claim that stock `vfat` alone clears
+all crash-state metadata, nor does it claim crash correctness at arbitrary
 metadata instruction points. The reservation design still requires explicit
 future cut points around FAT linking, mirror updates, FSINFO, directory-size
 updates, data flush ordering, and interrupted truncate/free.
