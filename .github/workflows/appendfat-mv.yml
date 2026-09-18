@@ -44,6 +44,24 @@ jobs:
           CC: ${{ matrix.compiler }}
         run: sh tests/appendfat-mv.sh
 
+  armv7-android-compile:
+    name: Android ARMv7 / Thumb-2 compile
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out appendfat repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Compile for Android API 24 ARMv7
+        run: |
+          compiler="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi24-clang"
+          test -x "$compiler"
+          "$compiler" \
+            -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror \
+            -mthumb -march=armv7-a -fPIE -pie \
+            tools/appendfat_mv.c \
+            -o /tmp/appendfat_mv-armv7
+          file /tmp/appendfat_mv-armv7
+
   physical-script-static-check:
     name: physical SD harness static check
     runs-on: ubuntu-latest
