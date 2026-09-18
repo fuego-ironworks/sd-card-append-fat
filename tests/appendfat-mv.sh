@@ -51,6 +51,18 @@ assert_no_temporary()
     fi
 }
 
+assert_no_source_quarantine()
+{
+    source=$1
+    directory=$(dirname "$source")
+    base=$(basename "$source")
+
+    if find "$directory" -maxdepth 1 -name "$base.appendfat_mv.source.*" -print -quit |
+       grep -q .; then
+        fail "source quarantine leaked beside $source"
+    fi
+}
+
 build()
 {
     ${CC:-cc} \
@@ -136,6 +148,7 @@ do
     cmp "$expected" "$destination"
     test ! -e "$source"
     assert_no_temporary "$destination"
+    assert_no_source_quarantine "$source"
 done
 pass "reserved copy sizes around the 256 KiB buffer boundary"
 
@@ -308,6 +321,46 @@ printf 'appeared during move\n' > "$work/race-destination-expected"
 cmp "$work/race-destination-expected" "$work/race-destination"
 assert_no_temporary "$work/race-destination"
 pass "destination created during copy is not overwritten"
+
+dd if=/dev/urandom of="$work/remove-race-source" bs=1M count=2 status=none
+cp "$work/remove-race-source" "$work/remove-race-expected"
+remove_race_marker="$work/remove-race-marker"
+env \
+    APPENDFAT_MV_FAULT=pause_before_source_unlink \
+    APPENDFAT_MV_MARKER="$remove_race_marker" \
+    APPENDFAT_MV_SOURCE="$work/remove-race-source" \
+    LD_PRELOAD="$faults" \
+    "$binary" --force-copy \
+    "$work/remove-race-source" "$work/remove-race-destination" \
+    >"$work/remove-race.stdout" 2>"$work/remove-race.stderr" &
+remove_race_pid=$!
+
+i=0
+while test ! -e "$remove_race_marker" && test "$i" -lt 200
+do
+    sleep 0.01
+    i=$((i + 1))
+done
+test -e "$remove_race_marker" || fail "source-removal race did not reach unlink boundary"
+
+if test -e "$work/remove-race-source"; then
+    mv "$work/remove-race-source" "$work/remove-race-old-source"
+fi
+printf 'replacement created during source removal\n' > "$work/remove-race-source"
+
+if ! wait "$remove_race_pid"; then
+    cat "$work/remove-race.stderr" >&2
+    fail "source-removal race unexpectedly failed"
+fi
+
+cmp "$work/remove-race-expected" "$work/remove-race-destination"
+printf 'replacement created during source removal\n' > "$work/remove-race-replacement-expected"
+cmp "$work/remove-race-replacement-expected" "$work/remove-race-source"
+test ! -e "$work/remove-race-old-source" ||
+    fail "original source was renamed aside instead of being removed by the mover"
+assert_no_temporary "$work/remove-race-destination"
+assert_no_source_quarantine "$work/remove-race-source"
+pass "replacement created at the source path during removal is not deleted"
 
 dd if=/dev/urandom of="$work/mutate-source" bs=1M count=2 status=none
 mutate_marker="$work/mutate-marker"
