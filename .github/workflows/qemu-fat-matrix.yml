@@ -1,0 +1,40 @@
+name: QEMU appendfat FAT matrix
+
+on:
+  push:
+    paths:
+      - 'fs/appendfat/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - 'docs/acceptance-gates.md'
+      - '.github/workflows/qemu-fat-matrix.yml'
+  pull_request:
+    paths:
+      - 'fs/appendfat/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - 'docs/acceptance-gates.md'
+      - '.github/workflows/qemu-fat-matrix.yml'
+
+jobs:
+  fat-matrix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out appendfat repository
+        uses: actions/checkout@v4
+
+      - name: Check out pinned Linux source
+        uses: actions/checkout@v4
+        with:
+          repository: torvalds/linux
+          ref: 238650ef6c7c7cca08e032527329424c9fbd70e5
+          path: linux
+          fetch-depth: 1
+
+      - name: Install build and VM dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential bc bison flex libssl-dev libelf-dev qemu-system-x86 busybox-static dosfstools cpio
+
+      - name: Run FAT12/FAT16/FAT32 and mount-option matrix
+        run: sh tests/qemu-fat-matrix.sh linux

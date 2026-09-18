@@ -1,0 +1,17 @@
+#!/bin/sh
+set -eu
+
+export PATH=/bin
+
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev
+mkdir -p /mnt/card
+
+mount -t vfat /dev/vda /mnt/card
+grep -qx 'baseline-before-cut' /mnt/card/baseline.txt
+grep -qx 'durable-before-cut' /mnt/card/durable.txt
+umount /mnt/card
+
+echo APPENDFAT_QEMU_POWER_CUT_VERIFY_PASS
+poweroff -f

@@ -1,0 +1,27 @@
+#!/bin/sh
+set -eu
+
+export PATH=/bin
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev
+mkdir -p /mnt/card
+
+grep -w appendfat /proc/filesystems >/dev/null
+mount -t appendfat /dev/vda /mnt/card
+
+printf 'prefix' > /mnt/card/reserved.bin
+/bin/fallocate-keep-size reserve /mnt/card/reserved.bin 0 262144
+/bin/fallocate-keep-size check /mnt/card/reserved.bin 6 prefix 120
+/bin/fallocate-keep-size blocks /mnt/card/reserved.bin 512
+
+: > /mnt/card/empty-reserved.bin
+/bin/fallocate-keep-size reserve /mnt/card/empty-reserved.bin 0 131072
+/bin/fallocate-keep-size check /mnt/card/empty-reserved.bin 0 - -1
+/bin/fallocate-keep-size blocks /mnt/card/empty-reserved.bin 256
+
+sync
+umount /mnt/card
+
+echo APPENDFAT_KEEP_SIZE_RESERVE_PASS
+poweroff -f
