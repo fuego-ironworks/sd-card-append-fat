@@ -61,4 +61,4 @@ heading "top-level inventory"
 count=$(find "$root" -mindepth 1 -maxdepth 1 -print 2>/dev/null | wc -l | tr -d ' ')
 printf 'top_level_entries=%s\n' "$count"
 
-pass "read-only preflight completed; no file or directory was created, changed, renamed, or deleted"
+pass "preflight completed; script issued no create, write, truncate, rename, or delete operation"
