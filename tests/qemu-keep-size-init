@@ -1,0 +1,63 @@
+#!/bin/sh
+set -eu
+
+export PATH=/bin
+
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev
+mkdir -p /mnt/card /tmp
+
+mount -t appendfat /dev/vda /mnt/card
+
+/bin/fallocate-keep-size keep /mnt/card/zero.bin 0 1048576 0
+
+printf 'prefix\n' > /mnt/card/prefix.txt
+/bin/fallocate-keep-size keep /mnt/card/prefix.txt 0 1048576 7
+printf 'tail\n' >> /mnt/card/prefix.txt
+/bin/fallocate-keep-size size /mnt/card/prefix.txt 12
+
+printf 'partial\n' > /mnt/card/partial.txt
+/bin/fallocate-keep-size keep /mnt/card/partial.txt 0 2097152 8
+printf 'x\n' >> /mnt/card/partial.txt
+/bin/fallocate-keep-size size /mnt/card/partial.txt 10
+
+dd if=/dev/zero of=/tmp/one-megabyte bs=4096 count=256
+dd if=/dev/zero of=/mnt/card/multi.bin bs=4096 count=1
+/bin/fallocate-keep-size keep /mnt/card/multi.bin 0 4194304 4096
+cat /tmp/one-megabyte >> /mnt/card/multi.bin
+/bin/fallocate-keep-size size /mnt/card/multi.bin 1052672
+
+printf 'unused\n' > /mnt/card/unused.txt
+/bin/fallocate-keep-size keep /mnt/card/unused.txt 0 1048576 7
+
+printf 'truncate-me\n' > /mnt/card/truncate.txt
+/bin/fallocate-keep-size keep /mnt/card/truncate.txt 0 1048576 12
+/bin/fallocate-keep-size truncate /mnt/card/truncate.txt 4
+
+sync
+umount /mnt/card
+
+mount -t vfat /dev/vda /mnt/card
+grep -qx 'prefix' /mnt/card/prefix.txt
+grep -qx 'tail' /mnt/card/prefix.txt
+/bin/fallocate-keep-size size /mnt/card/prefix.txt 12
+/bin/fallocate-keep-size size /mnt/card/partial.txt 10
+/bin/fallocate-keep-size size /mnt/card/multi.bin 1052672
+/bin/fallocate-keep-size size /mnt/card/unused.txt 7
+/bin/fallocate-keep-size size /mnt/card/truncate.txt 4
+umount /mnt/card
+
+mount -t appendfat /dev/vdb /mnt/card
+/bin/fallocate-keep-size expect-enospc /mnt/card/enospc.bin 0 1073741824 0
+sync
+umount /mnt/card
+
+mount -t vfat /dev/vdb /mnt/card
+/bin/fallocate-keep-size size /mnt/card/enospc.bin 0
+rm /mnt/card/enospc.bin
+sync
+umount /mnt/card
+
+echo APPENDFAT_QEMU_KEEP_SIZE_PASS
+poweroff -f

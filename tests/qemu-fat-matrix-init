@@ -1,0 +1,58 @@
+#!/bin/sh
+set -eu
+
+export PATH=/bin
+
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev
+mkdir -p /mnt/card
+
+grep -w vfat /proc/filesystems >/dev/null
+grep -w msdos /proc/filesystems >/dev/null
+grep -w appendfat /proc/filesystems >/dev/null
+grep -w appendmsdos /proc/filesystems >/dev/null
+
+for device in /dev/vda /dev/vdb /dev/vdc
+do
+    mount -t vfat "$device" /mnt/card
+    printf 'stock-data\n' > '/mnt/card/Long Filename.txt'
+    printf 'stock-83\n' > /mnt/card/STOCK.TXT
+    sync
+    umount /mnt/card
+
+    mount -t appendfat -o utf8=1,shortname=mixed "$device" /mnt/card
+    grep -qx 'stock-data' '/mnt/card/Long Filename.txt'
+    printf 'appendfat-data\n' >> '/mnt/card/Long Filename.txt'
+    printf 'appendfat-created\n' > '/mnt/card/Created By Appendfat.txt'
+    sync
+    umount /mnt/card
+
+    mount -t appendfat -o ro "$device" /mnt/card
+    grep -qx 'appendfat-created' '/mnt/card/Created By Appendfat.txt'
+    if printf 'must-fail\n' > /mnt/card/READONLY.TXT 2>/dev/null; then
+        printf '%s\n' "read-only appendfat mount accepted a write on $device" >&2
+        exit 1
+    fi
+    umount /mnt/card
+
+    mount -t appendmsdos "$device" /mnt/card
+    grep -qx 'stock-83' /mnt/card/STOCK.TXT
+    printf 'appendmsdos-data\n' > /mnt/card/MSDOS.TXT
+    sync
+    umount /mnt/card
+
+    mount -t msdos "$device" /mnt/card
+    grep -qx 'appendmsdos-data' /mnt/card/MSDOS.TXT
+    umount /mnt/card
+
+    mount -t vfat "$device" /mnt/card
+    grep -qx 'stock-data' '/mnt/card/Long Filename.txt'
+    grep -qx 'appendfat-data' '/mnt/card/Long Filename.txt'
+    grep -qx 'appendfat-created' '/mnt/card/Created By Appendfat.txt'
+    grep -qx 'appendmsdos-data' /mnt/card/MSDOS.TXT
+    umount /mnt/card
+done
+
+echo APPENDFAT_QEMU_FAT_MATRIX_PASS
+poweroff -f

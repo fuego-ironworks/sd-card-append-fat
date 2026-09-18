@@ -1,0 +1,71 @@
+#!/bin/sh
+set -eu
+
+export PATH=/bin
+
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev
+mkdir -p /mnt/card
+
+grep -w vfat /proc/filesystems >/dev/null
+if grep -w appendfat /proc/filesystems >/dev/null; then
+    printf '%s\n' 'appendfat unexpectedly registered before module load' >&2
+    exit 1
+fi
+
+insmod /modules/appendfat_core.ko
+insmod /modules/appendfat.ko
+insmod /modules/appendmsdos.ko
+
+grep -w appendfat /proc/filesystems >/dev/null
+grep -w appendmsdos /proc/filesystems >/dev/null
+
+mount -t vfat /dev/vda /mnt/card
+printf 'stock-before-module\n' > '/mnt/card/Long Name From Stock.txt'
+sync
+umount /mnt/card
+
+mount -t appendfat /dev/vda /mnt/card
+grep -qx 'stock-before-module' '/mnt/card/Long Name From Stock.txt'
+printf 'module-append\n' >> '/mnt/card/Long Name From Stock.txt'
+printf 'module-created\n' > '/mnt/card/Created By Module.txt'
+sync
+umount /mnt/card
+
+mount -t appendmsdos /dev/vda /mnt/card
+printf 'msdos-module\n' > /mnt/card/MODULE.TXT
+sync
+umount /mnt/card
+
+rmmod appendmsdos
+rmmod appendfat
+rmmod appendfat_core
+
+if grep -w appendfat /proc/filesystems >/dev/null; then
+    printf '%s\n' 'appendfat remained registered after unload' >&2
+    exit 1
+fi
+if grep -w appendmsdos /proc/filesystems >/dev/null; then
+    printf '%s\n' 'appendmsdos remained registered after unload' >&2
+    exit 1
+fi
+
+insmod /modules/appendfat_core.ko
+insmod /modules/appendfat.ko
+mount -t appendfat /dev/vda /mnt/card
+grep -qx 'stock-before-module' '/mnt/card/Long Name From Stock.txt'
+grep -qx 'module-append' '/mnt/card/Long Name From Stock.txt'
+grep -qx 'module-created' '/mnt/card/Created By Module.txt'
+grep -qx 'msdos-module' /mnt/card/MODULE.TXT
+umount /mnt/card
+rmmod appendfat
+rmmod appendfat_core
+
+mount -t vfat /dev/vda /mnt/card
+grep -qx 'module-created' '/mnt/card/Created By Module.txt'
+grep -qx 'msdos-module' /mnt/card/MODULE.TXT
+umount /mnt/card
+
+echo APPENDFAT_QEMU_MODULE_LOAD_PASS
+poweroff -f
