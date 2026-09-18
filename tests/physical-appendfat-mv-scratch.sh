@@ -135,6 +135,7 @@ if "$binary" --force-copy "$source_file" "$scratch/reserved-destination" 2>"$std
     test -f "$scratch/reserved-destination" || fail "destination missing after success"
     test "$(sha256sum "$scratch/reserved-destination" | awk '{print $1}')" = "$expected_hash" ||
         fail "destination hash differs from source hash"
+    rm -f "$scratch/reserved-destination"
     pass "reservation-before-copy path succeeded inside isolated scratch space"
 else
     test -f "$source_file" || fail "failed move removed its source"
@@ -154,4 +155,7 @@ fi
 
 heading "scratch ownership check"
 test "$(cat "$marker")" = "$token" || fail "scratch ownership marker changed"
-pass "physical test touched only disposable files under $scratch"
+unexpected=$(find "$scratch" -mindepth 1 -maxdepth 1 ! -name '.appendfat-mv-owned' -print -quit)
+test -z "$unexpected" ||
+    fail "unexpected scratch content was left untouched for inspection: $unexpected"
+pass "physical test touched only disposable files under $scratch and left no unexpected scratch content"
