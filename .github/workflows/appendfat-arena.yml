@@ -1,0 +1,28 @@
+name: appendfat userspace arena host test
+
+on:
+  push:
+    paths:
+      - 'tools/appendfat_arena.c'
+      - 'tests/appendfat-arena.sh'
+      - 'docs/prezeroed-userspace-arena.md'
+      - '.github/workflows/appendfat-arena.yml'
+  pull_request:
+    paths:
+      - 'tools/appendfat_arena.c'
+      - 'tests/appendfat-arena.sh'
+      - 'docs/prezeroed-userspace-arena.md'
+      - '.github/workflows/appendfat-arena.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  host-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out appendfat repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Build and exercise fixed-size arena
+        run: sh tests/appendfat-arena.sh
