@@ -32,6 +32,7 @@ write_initramfs=$work/write-initramfs.cpio.gz
 verify_initramfs=$work/verify-initramfs.cpio.gz
 write_log=$work/write.log
 verify_log=$work/verify.log
+post_cut_fsck=$work/post-cut-fsck.log
 
 truncate -s 64M "$fat_image"
 mkfs.fat -F 32 -n AFCUT "$fat_image"
@@ -91,7 +92,23 @@ kill -KILL "$qemu_pid"
 wait "$qemu_pid" 2>/dev/null || true
 qemu_pid=
 
-fsck.fat -n -v "$fat_image"
+set +e
+fsck.fat -n -v "$fat_image" > "$post_cut_fsck" 2>&1
+post_cut_fsck_status=$?
+set -e
+
+cat "$post_cut_fsck"
+case "$post_cut_fsck_status" in
+    0|1)
+        ;;
+    *)
+        printf '%s\n' "post-cut fsck failed unexpectedly: $post_cut_fsck_status" >&2
+        exit "$post_cut_fsck_status"
+        ;;
+esac
+
+grep -F 'Dirty bit is set.' "$post_cut_fsck" >/dev/null
+grep -F 'Leaving filesystem unchanged.' "$post_cut_fsck" >/dev/null
 
 make_root
 cp "$repo/tests/qemu-power-cut-verify-init" "$root/init"
@@ -120,5 +137,9 @@ if [ "$verify_status" -ne 0 ] && [ "$verify_status" -ne 124 ]; then
     printf '%s\n' "verification qemu exited unexpectedly: $verify_status" >&2
     exit "$verify_status"
 fi
+
+# The stock-vfat verification boot cleanly unmounts the image. After that
+# recovery boundary, there must be no remaining fsck error.
+fsck.fat -n -v "$fat_image"
 
 printf '%s\n' 'appendfat synced-write abrupt-power-cut boundary passed'

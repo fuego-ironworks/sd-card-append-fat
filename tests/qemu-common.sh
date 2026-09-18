@@ -87,7 +87,9 @@ appendfat_prepare_linux()
 
     make -C "$appendfat_linux_tree" -j2 bzImage
     if [ "$appendfat_mode" = module ]; then
-        make -C "$appendfat_linux_tree" -j2 M=fs/appendfat modules
+        # Use the normal in-tree module target so Kbuild generates the kernel
+        # symbol table before modpost validates appendfat's .ko files.
+        make -C "$appendfat_linux_tree" -j2 modules
     fi
 }
 
