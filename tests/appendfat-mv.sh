@@ -206,11 +206,11 @@ pass "mode and modification time preservation"
 
 printf 'important target\n' > "$work/symlink-target"
 ln -s "$work/symlink-target" "$work/symlink-source"
-expect_fail "$binary" --force-copy "$work/symlink-source" "$work/symlink-destination"
+expect_fail "$binary" --force-copy "$work/symlink-source" "$work/symlink-source-copy-destination"
 printf 'important target\n' > "$work/symlink-expected"
 cmp "$work/symlink-expected" "$work/symlink-target"
 test -L "$work/symlink-source"
-test ! -e "$work/symlink-destination"
+test ! -e "$work/symlink-source-copy-destination"
 pass "cross-filesystem-style path refuses a symbolic-link source"
 
 mkdir "$work/directory-source"
