@@ -1,17 +1,27 @@
-name: appendfat_mv host test
+name: appendfat_mv safety tests
 
 on:
   push:
     paths:
       - 'tools/appendfat_mv.c'
       - 'tests/appendfat-mv.sh'
+      - 'tests/appendfat-mv-faults.c'
+      - 'tests/appendfat-mv-mutations.sh'
+      - 'tests/physical-sd-readonly-preflight.sh'
+      - 'tests/physical-appendfat-mv-scratch.sh'
       - 'docs/appendfat-mv.md'
+      - 'AGENTS.md'
       - '.github/workflows/appendfat-mv.yml'
   pull_request:
     paths:
       - 'tools/appendfat_mv.c'
       - 'tests/appendfat-mv.sh'
+      - 'tests/appendfat-mv-faults.c'
+      - 'tests/appendfat-mv-mutations.sh'
+      - 'tests/physical-sd-readonly-preflight.sh'
+      - 'tests/physical-appendfat-mv-scratch.sh'
       - 'docs/appendfat-mv.md'
+      - 'AGENTS.md'
       - '.github/workflows/appendfat-mv.yml'
 
 permissions:
@@ -19,10 +29,73 @@ permissions:
 
 jobs:
   host-test:
+    name: host safety tests (${{ matrix.compiler }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler:
+          - gcc
+          - clang
     steps:
       - name: Check out appendfat repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: Build and exercise appendfat_mv
+        env:
+          CC: ${{ matrix.compiler }}
         run: sh tests/appendfat-mv.sh
+
+  mutation-test:
+    name: dangerous mutants must fail
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out appendfat repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Prove the safety suite rejects known-bad movers
+        run: sh tests/appendfat-mv-mutations.sh
+
+  armv7-android-compile:
+    name: Android ARMv7 / Thumb-2 compile
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out appendfat repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Compile for Android API 24 ARMv7
+        run: |
+          compiler="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi24-clang"
+          test -x "$compiler"
+          "$compiler" \
+            -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror \
+            -mthumb -march=armv7-a -fPIE -pie \
+            tools/appendfat_mv.c \
+            -o /tmp/appendfat_mv-armv7
+          file /tmp/appendfat_mv-armv7
+
+  physical-script-static-check:
+    name: physical SD harness static check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out appendfat repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Parse scratch-only physical scripts
+        run: |
+          sh -n tests/physical-sd-readonly-preflight.sh
+          sh -n tests/physical-appendfat-mv-scratch.sh
+
+      - name: Refuse dangerous recursive deletion in physical scripts
+        run: |
+          if grep -nE 'rm[[:space:]]+-[[:alnum:]]*r|rm[[:space:]]+--recursive' \
+              tests/physical-sd-readonly-preflight.sh \
+              tests/physical-appendfat-mv-scratch.sh; then
+            echo 'physical SD scripts must never use recursive deletion' >&2
+            exit 1
+          fi
+
+      - name: Require explicit scratch arming
+        run: |
+          grep -F 'APPENDFAT_MV_PHYSICAL_SCRATCH' \
+              tests/physical-appendfat-mv-scratch.sh >/dev/null

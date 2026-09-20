@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -21,6 +22,10 @@
 #define O_NOFOLLOW 0
 #endif
 
+#ifndef O_DIRECTORY
+#define O_DIRECTORY 0
+#endif
+
 #define COPY_BUFFER_SIZE (256U * 1024U)
 #define TEMP_ATTEMPTS 1000U
 
@@ -28,7 +33,9 @@ static const char *program_name = "appendfat_mv";
 
 static void usage(FILE *stream)
 {
-    fprintf(stream, "usage: %s [--force-copy] SOURCE DESTINATION\n", program_name);
+    fprintf(stream,
+            "usage: %s [--force-copy] [--replace] [--] SOURCE DESTINATION\n",
+            program_name);
 }
 
 static void report_errno(const char *action, const char *path)
@@ -53,28 +60,56 @@ static const char *path_basename(const char *path)
     return start;
 }
 
+static char *path_entry_without_trailing_slashes(const char *path)
+{
+    size_t length = strlen(path);
+    char *result;
+
+    while (length > 1U && path[length - 1U] == '/')
+        --length;
+
+    result = malloc(length + 1U);
+    if (result == NULL)
+        return NULL;
+
+    memcpy(result, path, length);
+    result[length] = '\0';
+    return result;
+}
+
 static char *destination_path(const char *source, const char *destination)
 {
     struct stat status;
+    char *entry = path_entry_without_trailing_slashes(destination);
 
-    if (stat(destination, &status) == 0 && S_ISDIR(status.st_mode)) {
-        const char *base = path_basename(source);
-        size_t destination_length = strlen(destination);
-        size_t base_length = strlen(base);
-        bool needs_slash = destination_length > 0 &&
-                           destination[destination_length - 1] != '/';
-        size_t total = destination_length + (needs_slash ? 1U : 0U) +
-                       base_length + 1U;
-        char *result = malloc(total);
+    if (entry == NULL)
+        return NULL;
 
-        if (result == NULL)
-            return NULL;
+    if (lstat(entry, &status) == 0) {
+        if (S_ISLNK(status.st_mode))
+            return entry;
 
-        snprintf(result, total, "%s%s%s", destination,
-                 needs_slash ? "/" : "", base);
-        return result;
+        if (S_ISDIR(status.st_mode)) {
+            const char *base = path_basename(source);
+            size_t destination_length = strlen(destination);
+            size_t base_length = strlen(base);
+            bool needs_slash = destination_length > 0 &&
+                               destination[destination_length - 1] != '/';
+            size_t total = destination_length + (needs_slash ? 1U : 0U) +
+                           base_length + 1U;
+            char *result = malloc(total);
+
+            free(entry);
+            if (result == NULL)
+                return NULL;
+
+            snprintf(result, total, "%s%s%s", destination,
+                     needs_slash ? "/" : "", base);
+            return result;
+        }
     }
 
+    free(entry);
     return strdup(destination);
 }
 
@@ -83,9 +118,9 @@ static int same_file(const char *source, const char *destination)
     struct stat source_status;
     struct stat destination_status;
 
-    if (stat(source, &source_status) != 0)
+    if (lstat(source, &source_status) != 0)
         return 0;
-    if (stat(destination, &destination_status) != 0)
+    if (lstat(destination, &destination_status) != 0)
         return 0;
 
     return source_status.st_dev == destination_status.st_dev &&
@@ -107,6 +142,24 @@ static char *temporary_path(const char *destination, unsigned attempt)
 
     snprintf(path, (size_t)needed + 1U, "%s.appendfat_mv.tmp.%ld.%u",
              destination, (long)getpid(), attempt);
+    return path;
+}
+
+static char *source_quarantine_path(const char *source, unsigned attempt)
+{
+    int needed = snprintf(NULL, 0, "%s.appendfat_mv.source.%ld.%u",
+                          source, (long)getpid(), attempt);
+    char *path;
+
+    if (needed < 0)
+        return NULL;
+
+    path = malloc((size_t)needed + 1U);
+    if (path == NULL)
+        return NULL;
+
+    snprintf(path, (size_t)needed + 1U, "%s.appendfat_mv.source.%ld.%u",
+             source, (long)getpid(), attempt);
     return path;
 }
 
@@ -223,7 +276,140 @@ static int copy_exactly(int source_fd, int destination_fd, off_t length)
     return 0;
 }
 
-static int cross_filesystem_move(const char *source, const char *destination)
+static int fsync_parent(const char *path)
+{
+    char *copy = strdup(path);
+    char *slash;
+    const char *directory;
+    int fd;
+    int result;
+    int saved_errno;
+
+    if (copy == NULL) {
+        errno = ENOMEM;
+        return -1;
+    }
+
+    slash = strrchr(copy, '/');
+    if (slash == NULL) {
+        directory = ".";
+    } else if (slash == copy) {
+        slash[1] = '\0';
+        directory = copy;
+    } else {
+        *slash = '\0';
+        directory = copy;
+    }
+
+    fd = open(directory, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    if (fd < 0) {
+        free(copy);
+        return -1;
+    }
+
+    result = fsync(fd);
+    saved_errno = errno;
+    close(fd);
+    free(copy);
+    errno = saved_errno;
+    return result;
+}
+
+static int install_path(const char *source, const char *destination,
+                        bool allow_replace)
+{
+    if (allow_replace)
+        return rename(source, destination);
+
+#if defined(__ANDROID__)
+# if defined(SYS_renameat2)
+    return (int)syscall(SYS_renameat2,
+                        AT_FDCWD, source, AT_FDCWD, destination,
+                        RENAME_NOREPLACE);
+# else
+    errno = ENOSYS;
+    return -1;
+# endif
+#else
+    return renameat2(AT_FDCWD, source, AT_FDCWD, destination,
+                     RENAME_NOREPLACE);
+#endif
+}
+
+static int remove_original_source(const char *source,
+                                  const struct stat *expected)
+{
+    struct stat moved;
+    char *quarantine = NULL;
+    unsigned attempt;
+    int saved_errno;
+
+    for (attempt = 0; attempt < TEMP_ATTEMPTS; ++attempt) {
+        quarantine = source_quarantine_path(source, attempt);
+        if (quarantine == NULL) {
+            errno = ENOMEM;
+            return -1;
+        }
+
+        if (install_path(source, quarantine, false) == 0)
+            break;
+
+        saved_errno = errno;
+        free(quarantine);
+        quarantine = NULL;
+        if (saved_errno != EEXIST) {
+            errno = saved_errno;
+            return -1;
+        }
+    }
+
+    if (quarantine == NULL) {
+        errno = EEXIST;
+        return -1;
+    }
+
+    if (lstat(quarantine, &moved) != 0) {
+        saved_errno = errno;
+        if (install_path(quarantine, source, false) != 0) {
+            fprintf(stderr,
+                    "%s: source verification failed; data may remain quarantined at '%s': %s\n",
+                    program_name, quarantine, strerror(errno));
+        }
+        free(quarantine);
+        errno = saved_errno;
+        return -1;
+    }
+
+    if (moved.st_dev != expected->st_dev || moved.st_ino != expected->st_ino) {
+        saved_errno = EBUSY;
+        if (install_path(quarantine, source, false) != 0) {
+            fprintf(stderr,
+                    "%s: source path changed; replacement left quarantined at '%s' because '%s' could not be restored: %s\n",
+                    program_name, quarantine, source, strerror(errno));
+        }
+        free(quarantine);
+        errno = saved_errno;
+        return -1;
+    }
+
+    if (unlink(quarantine) != 0) {
+        saved_errno = errno;
+        if (install_path(quarantine, source, false) != 0) {
+            fprintf(stderr,
+                    "%s: source removal failed; original left quarantined at '%s' because '%s' could not be restored: %s\n",
+                    program_name, quarantine, source, strerror(errno));
+        }
+        free(quarantine);
+        errno = saved_errno;
+        return -1;
+    }
+
+    free(quarantine);
+    return 0;
+}
+
+static int cross_filesystem_move(const char *source, const char *destination,
+                                 bool allow_replace)
 {
     struct stat source_status;
     struct stat final_source_status;
@@ -277,7 +463,9 @@ static int cross_filesystem_move(const char *source, const char *destination)
     }
     if (final_source_status.st_size != source_status.st_size ||
         final_source_status.st_mtim.tv_sec != source_status.st_mtim.tv_sec ||
-        final_source_status.st_mtim.tv_nsec != source_status.st_mtim.tv_nsec) {
+        final_source_status.st_mtim.tv_nsec != source_status.st_mtim.tv_nsec ||
+        final_source_status.st_ctim.tv_sec != source_status.st_ctim.tv_sec ||
+        final_source_status.st_ctim.tv_nsec != source_status.st_ctim.tv_nsec) {
         errno = EBUSY;
         report_errno("source changed while moving", source);
         goto done;
@@ -311,14 +499,26 @@ static int cross_filesystem_move(const char *source, const char *destination)
     }
     destination_fd = -1;
 
-    if (rename(temporary, destination) != 0) {
+    if (install_path(temporary, destination, allow_replace) != 0) {
         report_errno("cannot install destination", destination);
         goto done;
     }
     destination_installed = true;
 
-    if (unlink(source) != 0) {
-        report_errno("destination is complete but source could not be removed", source);
+    if (fsync_parent(destination) != 0) {
+        report_errno("destination is complete but its directory could not be synced",
+                     destination);
+        goto done;
+    }
+
+    if (remove_original_source(source, &source_status) != 0) {
+        report_errno("destination is complete but original source could not be removed safely",
+                     source);
+        goto done;
+    }
+
+    if (fsync_parent(source) != 0) {
+        report_errno("move completed but source directory could not be synced", source);
         goto done;
     }
 
@@ -340,6 +540,7 @@ done:
 int main(int argc, char **argv)
 {
     bool force_copy = false;
+    bool allow_replace = false;
     const char *source;
     const char *destination_argument;
     char *destination;
@@ -348,9 +549,28 @@ int main(int argc, char **argv)
     if (argc > 0 && argv[0] != NULL)
         program_name = argv[0];
 
-    if (first_argument < argc && strcmp(argv[first_argument], "--force-copy") == 0) {
-        force_copy = true;
-        ++first_argument;
+    while (first_argument < argc) {
+        const char *argument = argv[first_argument];
+
+        if (strcmp(argument, "--force-copy") == 0) {
+            force_copy = true;
+            ++first_argument;
+            continue;
+        }
+        if (strcmp(argument, "--replace") == 0) {
+            allow_replace = true;
+            ++first_argument;
+            continue;
+        }
+        if (strcmp(argument, "--") == 0) {
+            ++first_argument;
+            break;
+        }
+        if (argument[0] == '-' && argument[1] != '\0') {
+            usage(stderr);
+            return 2;
+        }
+        break;
     }
 
     if (argc - first_argument != 2) {
@@ -373,7 +593,7 @@ int main(int argc, char **argv)
     }
 
     if (!force_copy) {
-        if (rename(source, destination) == 0) {
+        if (install_path(source, destination, allow_replace) == 0) {
             free(destination);
             return 0;
         }
@@ -384,7 +604,7 @@ int main(int argc, char **argv)
         }
     }
 
-    if (cross_filesystem_move(source, destination) != 0) {
+    if (cross_filesystem_move(source, destination, allow_replace) != 0) {
         free(destination);
         return 1;
     }
