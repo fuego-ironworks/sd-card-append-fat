@@ -2,21 +2,37 @@ name: QEMU appendfat keep-size reservation
 
 on:
   push:
+    branches:
+      - main
     paths:
       - 'fs/appendfat/**'
-      - 'scripts/**'
-      - 'tests/**'
-      - 'docs/append-arena-design.md'
-      - 'docs/acceptance-gates.md'
+      - 'scripts/install-appendfat-into-linux.sh'
+      - 'tests/qemu-common.sh'
+      - 'tests/qemu-keep-size.sh'
+      - 'tests/qemu-keep-size-characterization.sh'
+      - 'tests/fallocate-keep-size.c'
+      - 'tests/qemu-keep-size-init'
+      - 'tests/qemu-fallocate-reserve-init'
+      - 'tests/qemu-fallocate-consume-init'
+      - 'tests/qemu-fallocate-full-consume-init'
       - '.github/workflows/qemu-keep-size.yml'
   pull_request:
     paths:
       - 'fs/appendfat/**'
-      - 'scripts/**'
-      - 'tests/**'
-      - 'docs/append-arena-design.md'
-      - 'docs/acceptance-gates.md'
+      - 'scripts/install-appendfat-into-linux.sh'
+      - 'tests/qemu-common.sh'
+      - 'tests/qemu-keep-size.sh'
+      - 'tests/qemu-keep-size-characterization.sh'
+      - 'tests/fallocate-keep-size.c'
+      - 'tests/qemu-keep-size-init'
+      - 'tests/qemu-fallocate-reserve-init'
+      - 'tests/qemu-fallocate-consume-init'
+      - 'tests/qemu-fallocate-full-consume-init'
       - '.github/workflows/qemu-keep-size.yml'
+
+concurrency:
+  group: ${{ github.repository }}-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   keep-size:
