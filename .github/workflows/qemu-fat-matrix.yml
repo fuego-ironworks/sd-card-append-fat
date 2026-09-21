@@ -2,19 +2,27 @@ name: QEMU appendfat FAT matrix
 
 on:
   push:
+    branches:
+      - main
     paths:
       - 'fs/appendfat/**'
-      - 'scripts/**'
-      - 'tests/**'
-      - 'docs/acceptance-gates.md'
+      - 'scripts/install-appendfat-into-linux.sh'
+      - 'tests/qemu-common.sh'
+      - 'tests/qemu-fat-matrix.sh'
+      - 'tests/qemu-fat-matrix-init'
       - '.github/workflows/qemu-fat-matrix.yml'
   pull_request:
     paths:
       - 'fs/appendfat/**'
-      - 'scripts/**'
-      - 'tests/**'
-      - 'docs/acceptance-gates.md'
+      - 'scripts/install-appendfat-into-linux.sh'
+      - 'tests/qemu-common.sh'
+      - 'tests/qemu-fat-matrix.sh'
+      - 'tests/qemu-fat-matrix-init'
       - '.github/workflows/qemu-fat-matrix.yml'
+
+concurrency:
+  group: ${{ github.repository }}-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   fat-matrix:
