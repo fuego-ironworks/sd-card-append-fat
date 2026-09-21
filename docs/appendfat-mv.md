@@ -46,14 +46,16 @@ Example, moving from internal Termux storage to the SD card:
 ```sh
 ./appendfat_mv \
     ~/takeout/archive.zip \
-    ~/storage/external-1/archive.zip
+    ~/SD.card/archive.zip
 ```
 
 An existing destination directory is also accepted:
 
 ```sh
-./appendfat_mv ~/takeout/archive.zip ~/storage/external-1/
+./appendfat_mv ~/takeout/archive.zip ~/SD.card/
 ```
+
+On the current MIRO A1 target, `~/SD.card` is a verified symlink to the whole removable-card root `/storage/4A21-0000`. `~/storage/external-1` is **not** the card root on this phone; it resolves to `/storage/4A21-0000/Android/data/com.termux/files`, which is Termux's app-private directory on the card.
 
 Destination symlinks are deliberately not followed. A symlink supplied as the
 destination is treated as an existing path and is refused by default, including
@@ -99,7 +101,7 @@ Cross-filesystem mode currently supports regular files only. It is not a complet
 
 Treat removable media as if it contains unique data unless proven otherwise.
 
-The repository now separates physical acceptance into two scripts:
+The repository separates the generic physical checks from the phone card-root wrapper:
 
 1. `tests/physical-sd-readonly-preflight.sh SD_ROOT`
    - resolves and reports the target path;
@@ -115,6 +117,13 @@ The repository now separates physical acceptance into two scripts:
    - never uses recursive deletion;
    - removes only individually named test files after verifying its ownership marker;
    - leaves the scratch directory in place rather than broadening cleanup if anything unexpected appears.
+
+3. `tests/physical-phone-appendfat-mv-acceptance.sh APPENDFAT_MV_BINARY SD_ROOT`
+   - requires the same explicit scratch-write arm;
+   - rejects nested `/storage/.../...` paths such as Termux's `Android/data` directory;
+   - requires `SD_ROOT` to resolve to the actual `/storage/<volume-id>` filesystem mountpoint;
+   - runs the read-only preflight before the armed scratch test;
+   - keeps ANSI color on the terminal while writing a plain-text receipt.
 
 On the currently observed Android/FUSE removable-storage path, the expected reservation-before-copy result remains a safe failure with `Operation not supported (EOPNOTSUPP)`: the disposable source must remain byte-for-byte intact and no final destination may appear.
 
