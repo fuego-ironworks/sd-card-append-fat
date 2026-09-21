@@ -3,9 +3,15 @@
 This receipt records the stock removable-storage boundary relevant to
 `appendfat_mv`. It is not appendfat acceptance.
 
-The target is the Termux removable-SD view (`~/storage/external-1`), which is
-presented to the application through Android's FUSE storage path. The card is
-currently formatted as exFAT.
+The target used by this historical probe was `~/storage/external-1`, which
+resolves on the MIRO A1 to
+`/storage/4A21-0000/Android/data/com.termux/files`. That is Termux's
+app-private directory on the physical SD card, presented through Android's
+FUSE storage path; it is **not** the whole-card root. The whole removable-card
+root is `/storage/4A21-0000`, with the verified convenience symlink
+`~/SD.card`.
+
+The card is currently formatted as exFAT.
 
 A 16 MiB keep-size reservation was attempted on a newly created zero-length
 file:
@@ -28,9 +34,11 @@ failed at that mediated path.
 
 ## Meaning
 
-The current stock phone path cannot satisfy `appendfat_mv`'s reservation
-precondition. The program must therefore fail before copying and leave the
-source untouched on this path.
+This app-private SD-backed FUSE path cannot satisfy `appendfat_mv`'s
+reservation precondition. The program must therefore fail before copying and
+leave the source untouched on this path. This receipt must not be described as
+whole-card-root acceptance; that requires a separate run against
+`~/SD.card` / `/storage/4A21-0000`.
 
 This result does not show that a future appendfat mount lacks keep-size support.
 The pinned Linux FAT implementation and the appendfat QEMU keep-size gate are

@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-if test -t 1; then
+if test -t 1 || test "${APPENDFAT_COLOR:-}" = always; then
     cyan='\033[1;36m'
     yellow='\033[1;33m'
     green='\033[1;32m'

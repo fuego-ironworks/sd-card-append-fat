@@ -39,3 +39,4 @@
 - Do not use recursive deletion in physical-media acceptance scripts. Remove only exact test paths created by that run; if unexpected contents appear, stop cleanup and leave the scratch directory for inspection.
 - User-facing movers and test tools should fail closed around existing destinations by default. Any replacement behavior must require an explicit option or separately explicit user intent.
 - Keep read-only inventory/preflight evidence separate from write acceptance.
+- For whole-card Android/Termux acceptance, require an explicitly identified removable-volume root such as `/storage/<volume-id>` or a verified symlink to it. Do not silently treat `~/storage/external-*` as the card root; Termux may map it to app-private `Android/data` storage.
