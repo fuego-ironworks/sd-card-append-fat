@@ -2,6 +2,8 @@ name: appendfat_mv safety tests
 
 on:
   push:
+    branches:
+      - main
     paths:
       - 'tools/appendfat_mv.c'
       - 'tests/appendfat-mv.sh'
@@ -9,7 +11,9 @@ on:
       - 'tests/appendfat-mv-mutations.sh'
       - 'tests/physical-sd-readonly-preflight.sh'
       - 'tests/physical-appendfat-mv-scratch.sh'
+      - 'tests/physical-phone-appendfat-mv-acceptance.sh'
       - 'docs/appendfat-mv.md'
+      - 'docs/phone-keep-size-probe-2026-09-18.md'
       - 'AGENTS.md'
       - '.github/workflows/appendfat-mv.yml'
   pull_request:
@@ -20,9 +24,15 @@ on:
       - 'tests/appendfat-mv-mutations.sh'
       - 'tests/physical-sd-readonly-preflight.sh'
       - 'tests/physical-appendfat-mv-scratch.sh'
+      - 'tests/physical-phone-appendfat-mv-acceptance.sh'
       - 'docs/appendfat-mv.md'
+      - 'docs/phone-keep-size-probe-2026-09-18.md'
       - 'AGENTS.md'
       - '.github/workflows/appendfat-mv.yml'
+
+concurrency:
+  group: ${{ github.repository }}-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -85,12 +95,14 @@ jobs:
         run: |
           sh -n tests/physical-sd-readonly-preflight.sh
           sh -n tests/physical-appendfat-mv-scratch.sh
+          bash -n tests/physical-phone-appendfat-mv-acceptance.sh
 
       - name: Refuse dangerous recursive deletion in physical scripts
         run: |
           if grep -nE 'rm[[:space:]]+-[[:alnum:]]*r|rm[[:space:]]+--recursive' \
               tests/physical-sd-readonly-preflight.sh \
-              tests/physical-appendfat-mv-scratch.sh; then
+              tests/physical-appendfat-mv-scratch.sh \
+              tests/physical-phone-appendfat-mv-acceptance.sh; then
             echo 'physical SD scripts must never use recursive deletion' >&2
             exit 1
           fi
