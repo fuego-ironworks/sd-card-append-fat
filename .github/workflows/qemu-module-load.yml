@@ -2,19 +2,27 @@ name: QEMU appendfat module load
 
 on:
   push:
+    branches:
+      - main
     paths:
       - 'fs/appendfat/**'
-      - 'scripts/**'
-      - 'tests/**'
-      - 'docs/acceptance-gates.md'
+      - 'scripts/install-appendfat-into-linux.sh'
+      - 'tests/qemu-common.sh'
+      - 'tests/qemu-module-load.sh'
+      - 'tests/qemu-module-load-init'
       - '.github/workflows/qemu-module-load.yml'
   pull_request:
     paths:
       - 'fs/appendfat/**'
-      - 'scripts/**'
-      - 'tests/**'
-      - 'docs/acceptance-gates.md'
+      - 'scripts/install-appendfat-into-linux.sh'
+      - 'tests/qemu-common.sh'
+      - 'tests/qemu-module-load.sh'
+      - 'tests/qemu-module-load-init'
       - '.github/workflows/qemu-module-load.yml'
+
+concurrency:
+  group: ${{ github.repository }}-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   module-load:
