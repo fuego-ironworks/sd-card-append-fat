@@ -2,21 +2,29 @@ name: QEMU appendfat abrupt power cut
 
 on:
   push:
+    branches:
+      - main
     paths:
       - 'fs/appendfat/**'
-      - 'scripts/**'
-      - 'tests/**'
-      - 'docs/append-arena-design.md'
-      - 'docs/acceptance-gates.md'
+      - 'scripts/install-appendfat-into-linux.sh'
+      - 'tests/qemu-common.sh'
+      - 'tests/qemu-power-cut.sh'
+      - 'tests/qemu-power-cut-write-init'
+      - 'tests/qemu-power-cut-verify-init'
       - '.github/workflows/qemu-power-cut.yml'
   pull_request:
     paths:
       - 'fs/appendfat/**'
-      - 'scripts/**'
-      - 'tests/**'
-      - 'docs/append-arena-design.md'
-      - 'docs/acceptance-gates.md'
+      - 'scripts/install-appendfat-into-linux.sh'
+      - 'tests/qemu-common.sh'
+      - 'tests/qemu-power-cut.sh'
+      - 'tests/qemu-power-cut-write-init'
+      - 'tests/qemu-power-cut-verify-init'
       - '.github/workflows/qemu-power-cut.yml'
+
+concurrency:
+  group: ${{ github.repository }}-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   power-cut:
