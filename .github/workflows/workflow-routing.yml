@@ -1,0 +1,31 @@
+name: Workflow routing contract
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/**'
+      - 'tests/workflow-routing.sh'
+  pull_request:
+    paths:
+      - '.github/workflows/**'
+      - 'tests/workflow-routing.sh'
+
+concurrency:
+  group: ${{ github.repository }}-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  routing:
+    name: workflow routing stays narrow
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out appendfat repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Check workflow trigger contract
+        run: sh tests/workflow-routing.sh

@@ -2,19 +2,25 @@ name: QEMU FAT image equivalence
 
 on:
   push:
+    branches:
+      - main
     paths:
       - 'fs/appendfat/**'
-      - 'scripts/**'
-      - 'tests/**'
-      - 'docs/qemu-fat-equivalence.md'
+      - 'scripts/install-appendfat-into-linux.sh'
+      - 'tests/qemu-fat-equivalence.sh'
+      - 'tests/qemu-fat-equivalence-init'
       - '.github/workflows/qemu-fat-equivalence.yml'
   pull_request:
     paths:
       - 'fs/appendfat/**'
-      - 'scripts/**'
-      - 'tests/**'
-      - 'docs/qemu-fat-equivalence.md'
+      - 'scripts/install-appendfat-into-linux.sh'
+      - 'tests/qemu-fat-equivalence.sh'
+      - 'tests/qemu-fat-equivalence-init'
       - '.github/workflows/qemu-fat-equivalence.yml'
+
+concurrency:
+  group: ${{ github.repository }}-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   equivalence:
