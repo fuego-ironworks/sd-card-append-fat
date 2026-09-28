@@ -264,6 +264,9 @@ static long fat_fallocate(struct file *file, int mode,
 			  loff_t offset, loff_t len)
 {
 	int nr_cluster; /* Number of clusters to be allocated */
+#ifdef APPENDFAT_ALLOC_METRICS
+	bool metric_enabled = false;
+#endif
 	loff_t mm_bytes; /* Number of bytes to be allocated for file */
 	loff_t ondisksize; /* block aligned on-disk size in bytes*/
 	struct inode *inode = file->f_mapping->host;
@@ -290,10 +293,14 @@ static long fat_fallocate(struct file *file, int mode,
 		nr_cluster = (mm_bytes + (sbi->cluster_size - 1)) >>
 			sbi->cluster_bits;
 #ifdef APPENDFAT_ALLOC_METRICS
-		pr_info("APPENDFAT_ALLOC_METRIC reserve_start bytes=%lld additional_clusters=%d allocated_clusters=%llu\n",
-			(long long)len, nr_cluster,
-			(unsigned long long)(inode->i_blocks >>
-					     (sbi->cluster_bits - 9)));
+		metric_enabled = nr_cluster <= 64;
+		if (metric_enabled) {
+			MSDOS_I(inode)->alloc_metrics = true;
+			pr_info("APPENDFAT_ALLOC_METRIC reserve_start bytes=%lld additional_clusters=%d allocated_clusters=%llu\n",
+				(long long)len, nr_cluster,
+				(unsigned long long)(inode->i_blocks >>
+						     (sbi->cluster_bits - 9)));
+		}
 #endif
 
 		/* Start the allocation.We are not zeroing out the clusters */
@@ -302,11 +309,6 @@ static long fat_fallocate(struct file *file, int mode,
 			if (err)
 				goto error;
 		}
-#ifdef APPENDFAT_ALLOC_METRICS
-		pr_info("APPENDFAT_ALLOC_METRIC reserve_end result=0 allocated_clusters=%llu\n",
-			(unsigned long long)(inode->i_blocks >>
-					     (sbi->cluster_bits - 9)));
-#endif
 	} else {
 		if ((offset + len) <= i_size_read(inode))
 			goto error;
@@ -316,6 +318,15 @@ static long fat_fallocate(struct file *file, int mode,
 	}
 
 error:
+#ifdef APPENDFAT_ALLOC_METRICS
+	if (metric_enabled) {
+		pr_info("APPENDFAT_ALLOC_METRIC reserve_end result=%d allocated_clusters=%llu\n",
+			err,
+			(unsigned long long)(inode->i_blocks >>
+					     (sbi->cluster_bits - 9)));
+		MSDOS_I(inode)->alloc_metrics = false;
+	}
+#endif
 	inode_unlock(inode);
 	return err;
 }

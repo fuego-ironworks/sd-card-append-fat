@@ -34,6 +34,7 @@ printf 'unused\n' > /mnt/card/unused.txt
 printf 'truncate-me\n' > /mnt/card/truncate.txt
 /bin/fallocate-keep-size keep /mnt/card/truncate.txt 0 1048576 12
 /bin/fallocate-keep-size truncate /mnt/card/truncate.txt 4
+/bin/fallocate-keep-size blocks /mnt/card/truncate.txt 1
 
 /bin/fallocate-keep-size reserve-clusters /mnt/card/batch.bin 17
 /bin/fallocate-keep-size extend-clusters /mnt/card/batch.bin 17 19
@@ -54,6 +55,7 @@ grep -qx 'tail' /mnt/card/prefix.txt
 /bin/fallocate-keep-size size /mnt/card/multi.bin 1052672
 /bin/fallocate-keep-size size /mnt/card/unused.txt 7
 /bin/fallocate-keep-size size /mnt/card/truncate.txt 4
+/bin/fallocate-keep-size blocks /mnt/card/truncate.txt 1
 /bin/fallocate-keep-size size /mnt/card/batch.bin 0
 /bin/fallocate-keep-size blocks /mnt/card/batch.bin 0
 umount /mnt/card
