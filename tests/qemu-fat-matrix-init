@@ -25,11 +25,14 @@ do
     grep -qx 'stock-data' '/mnt/card/Long Filename.txt'
     printf 'appendfat-data\n' >> '/mnt/card/Long Filename.txt'
     printf 'appendfat-created\n' > '/mnt/card/Created By Appendfat.txt'
+    /bin/fallocate-keep-size reserve-clusters /mnt/card/matrix-reserved.bin 5
+    /bin/fallocate-keep-size size /mnt/card/matrix-reserved.bin 0
     sync
     umount /mnt/card
 
     mount -t appendfat -o ro "$device" /mnt/card
     grep -qx 'appendfat-created' '/mnt/card/Created By Appendfat.txt'
+    /bin/fallocate-keep-size size /mnt/card/matrix-reserved.bin 0
     if printf 'must-fail\n' > /mnt/card/READONLY.TXT 2>/dev/null; then
         printf '%s\n' "read-only appendfat mount accepted a write on $device" >&2
         exit 1

@@ -372,6 +372,7 @@ int main(int argc, char **argv)
         unsigned long long offset;
         unsigned long long length;
         unsigned long long expected_size;
+        struct stat after;
         int result;
 
         if (argc != 6) {
@@ -403,6 +404,17 @@ int main(int argc, char **argv)
                         result, errno, strerror(errno));
                 return 1;
             }
+            if (fstat(fd, &after) != 0) {
+                perror("fstat after ENOSPC");
+                return 1;
+            }
+            if (after.st_blocks == 0) {
+                fprintf(stderr,
+                        "ENOSPC lost the clusters allocated before failure\n");
+                return 1;
+            }
+            printf("enospc_partial_blocks=%" PRIuMAX "\n",
+                   (uintmax_t)after.st_blocks);
         }
 
         require_size(fd, expected_size);

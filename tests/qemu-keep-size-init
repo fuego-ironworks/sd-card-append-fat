@@ -58,6 +58,10 @@ grep -qx 'tail' /mnt/card/prefix.txt
 /bin/fallocate-keep-size blocks /mnt/card/truncate.txt 1
 /bin/fallocate-keep-size size /mnt/card/batch.bin 0
 /bin/fallocate-keep-size blocks /mnt/card/batch.bin 0
+if [ -e /mnt/card/unlink-reserved.txt ]; then
+	printf '%s\n' 'unlink-reserved.txt survived stock-vfat remount' >&2
+	exit 1
+fi
 umount /mnt/card
 
 mount -t appendfat /dev/vdb /mnt/card
