@@ -95,9 +95,9 @@ The batched implementation used branch commit
 `ae2e5f1a9799e3983f430b8e09ffb42b6505d24d`; GitHub Actions checked out its
 synthetic PR merge tree `ee5088f366709a2d4569d7ce010734e2cbe4e0ef` (run
 [36467418914](https://github.com/fuego-ironworks/sd-card-append-fat/actions/runs/36467418914)).
-Both ran `sh tests/qemu-keep-size.sh linux`, which also runs
-`sh tests/qemu-keep-size-characterization.sh linux` and the post-phase host
-`fsck.fat -n -v` checks.
+Both workflows ran `sh tests/qemu-keep-size.sh linux` followed by
+`sh tests/qemu-keep-size-characterization.sh linux` as separate steps. The
+first script performs its post-phase host `fsck.fat -n -v` checks.
 
 From the repository root, with the pinned Linux checkout in `linux`, reproduce
 the workload with:
