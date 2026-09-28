@@ -19,6 +19,10 @@ appendfat_prepare_linux()
     appendfat_linux_tree=$2
     appendfat_mode=$3
 
+    if [ "${APPENDFAT_ALLOC_METRICS:-0}" = 1 ]; then
+        export KCFLAGS="${KCFLAGS:+$KCFLAGS }-DAPPENDFAT_ALLOC_METRICS"
+    fi
+
     appendfat_actual=$(git -C "$appendfat_linux_tree" rev-parse HEAD)
     if [ "$appendfat_actual" != "$appendfat_pinned_linux" ]; then
         printf '%s\n' "refusing unreviewed Linux base" >&2

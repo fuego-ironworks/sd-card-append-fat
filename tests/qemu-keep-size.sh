@@ -12,6 +12,7 @@ linux_tree=$1
 . "$repo/tests/qemu-common.sh"
 
 appendfat_require_commands busybox cc cpio fsck.fat mkfs.fat qemu-system-x86_64 timeout truncate
+export APPENDFAT_ALLOC_METRICS=1
 appendfat_prepare_linux "$repo" "$linux_tree" builtin
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/appendfat-keep-size.XXXXXX")

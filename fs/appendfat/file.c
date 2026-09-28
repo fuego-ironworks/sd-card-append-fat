@@ -289,6 +289,12 @@ static long fat_fallocate(struct file *file, int mode,
 		mm_bytes = offset + len - ondisksize;
 		nr_cluster = (mm_bytes + (sbi->cluster_size - 1)) >>
 			sbi->cluster_bits;
+#ifdef APPENDFAT_ALLOC_METRICS
+		pr_info("APPENDFAT_ALLOC_METRIC reserve_start bytes=%lld additional_clusters=%d allocated_clusters=%llu\n",
+			(long long)len, nr_cluster,
+			(unsigned long long)(inode->i_blocks >>
+					     (sbi->cluster_bits - 9)));
+#endif
 
 		/* Start the allocation.We are not zeroing out the clusters */
 		while (nr_cluster-- > 0) {
@@ -296,6 +302,11 @@ static long fat_fallocate(struct file *file, int mode,
 			if (err)
 				goto error;
 		}
+#ifdef APPENDFAT_ALLOC_METRICS
+		pr_info("APPENDFAT_ALLOC_METRIC reserve_end result=0 allocated_clusters=%llu\n",
+			(unsigned long long)(inode->i_blocks >>
+					     (sbi->cluster_bits - 9)));
+#endif
 	} else {
 		if ((offset + len) <= i_size_read(inode))
 			goto error;
