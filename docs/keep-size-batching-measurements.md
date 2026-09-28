@@ -18,8 +18,9 @@ NAND behavior.
 
 The static helper creates a zero-length file, reserves one cluster, then
 extends it to 17 clusters. This exercises the old one-cluster path and four
-additional-cluster batches with the current allocator limit of four. The
-cluster size is 512 bytes. A second operation extends the same chain from 17
+additional-cluster batches; the allocator's `MAX_BUF_PER_PAGE / 2` bound is
+four clusters in this QEMU 4 KiB page build. The cluster size is 512 bytes. A
+second operation extends the same chain from 17
 to 19 clusters; a third repeats the 19-cluster request without adding space.
 The helper checks that `i_size` remains zero and that `st_blocks` matches the
 requested capacity. It snapshots `/sys/block/vda/stat` around each operation
@@ -60,10 +61,13 @@ decisions.
 
 - The batched 17-cluster operation reported `size=0`, `blocks=17`; extension
   reported `size=0`, `blocks=19`; repeating the same request allocated nothing.
-- The ENOSPC fixture returned ENOSPC and reported `enospc_partial_blocks=65372`
-  while the file size remained zero. This preserves the previous interface
-  behavior: clusters successfully attached before the request runs out of
-  space remain allocated even though the request returns ENOSPC.
+- The FAT16 ENOSPC fixture returned ENOSPC and reported
+  `enospc_partial_blocks=65372` while the file size remained zero. This
+  preserves the previous interface behavior: clusters successfully attached
+  before the request runs out of space remain allocated even though the
+  request returns ENOSPC. After stock-vfat remount and unlink, `fsck.fat`
+  reported no allocated clusters, so the exercised failing batch and cleanup
+  left no leaked chain.
 - The keep-size fixture passed, including the zero-length file, nonempty file,
   one-cluster and multi-batch reservation, partial/full consumption, truncate,
   unlink, repeated/overlapping requests, stock `vfat` remount, and host
