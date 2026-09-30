@@ -111,7 +111,7 @@ The gate checks:
   required cluster, and returns `ENOSPC` only when no cluster remains;
 - host `fsck.fat -n -v` passes on both resulting images.
 
-This gate establishes bounded mounted-session reserve-ahead semantics and
+This gate establishes bounded live-inode reserve-ahead semantics and
 near-full fallback behavior. It does not establish persistent reservation
 metadata, Android execution, physical SD-card behavior, or arbitrary crash-cut
 correctness.
@@ -202,6 +202,6 @@ guarantee, or a stock-vfat format extension. The automatic policy is deliberatel
 part of appendfat itself rather than exposed as a stock FAT mount option.
 
 Remaining semantic work includes measuring the automatic policy's metadata
-effect, characterizing close/reopen lifetime separately from clean unmount,
+effect, designing deterministic close/reopen lifetime separately from clean unmount,
 adding the planned crash cut points, and deciding whether persistent reservation
 needs an explicit on-disk representation.
