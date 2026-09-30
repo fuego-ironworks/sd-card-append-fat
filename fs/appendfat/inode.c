@@ -101,19 +101,34 @@ static struct fat_floppy_defaults {
 },
 };
 
-int appendfat_add_cluster(struct inode *inode)
-{
-	int err, cluster;
+#define APPENDFAT_APPEND_AHEAD_CLUSTERS	(MAX_BUF_PER_PAGE / 2)
 
-	err = appendfat_alloc_clusters(inode, &cluster, 1);
+static int appendfat_add_clusters(struct inode *inode, int nr_cluster)
+{
+	int clusters[MAX_BUF_PER_PAGE / 2];
+	int err;
+
+	if (nr_cluster <= 0 || nr_cluster > ARRAY_SIZE(clusters))
+		return -EINVAL;
+
+	err = appendfat_alloc_clusters(inode, clusters, nr_cluster);
 	if (err)
 		return err;
-	/* FIXME: this cluster should be added after data of this
-	 * cluster is writed */
-	err = appendfat_chain_add(inode, cluster, 1);
+
+	/*
+	 * The allocator has already linked the new clusters to each other.
+	 * Attach that prepared chain to the inode once.
+	 */
+	err = appendfat_chain_add(inode, clusters[0], nr_cluster);
 	if (err)
-		appendfat_free_clusters(inode, cluster);
+		appendfat_free_clusters(inode, clusters[0]);
+
 	return err;
+}
+
+int appendfat_add_cluster(struct inode *inode)
+{
+	return appendfat_add_clusters(inode, 1);
 }
 
 static inline int __fat_get_block(struct inode *inode, sector_t iblock,
@@ -151,8 +166,19 @@ static inline int __fat_get_block(struct inode *inode, sector_t iblock,
 	 * 2) not part of fallocate region
 	 */
 	if (!offset && !(iblock < last_block)) {
-		/* TODO: multiple cluster allocation would be desirable. */
-		err = appendfat_add_cluster(inode);
+		/*
+		 * The write has consumed all currently allocated capacity.
+		 * Reserve one bounded allocator batch ahead of the writer so
+		 * subsequent cluster crossings do not immediately mutate the FAT.
+		 *
+		 * Reserve-ahead is opportunistic.  If there is not enough free
+		 * space for the whole batch, preserve ordinary FAT write behavior
+		 * by retrying with the single cluster the current write needs.
+		 */
+		err = appendfat_add_clusters(inode,
+					     APPENDFAT_APPEND_AHEAD_CLUSTERS);
+		if (err == -ENOSPC)
+			err = appendfat_add_cluster(inode);
 		if (err)
 			return err;
 	}
