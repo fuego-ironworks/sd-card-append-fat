@@ -8,7 +8,8 @@ mount -t sysfs sysfs /sys
 mount -t devtmpfs devtmpfs /dev
 mkdir -p /mnt/card
 
-# Normal reserve-ahead behavior: 512-byte clusters and a four-cluster batch.
+# Normal reserve-ahead behavior: one four-cluster allocator batch.  The
+# fixture derives cluster size from stat rather than assuming 512-byte clusters.
 # Each sequence keeps one file descriptor open so inode eviction cannot erase
 # the live reservation between assertions.
 /bin/appendfat-fixture reserve-ahead-sequence /mnt/card/ahead.bin
@@ -20,9 +21,9 @@ umount /mnt/card
 
 mount -t vfat /dev/vda /mnt/card
 /bin/appendfat-fixture check /mnt/card/ahead.bin 2049 A 67
-/bin/appendfat-fixture blocks /mnt/card/ahead.bin 5
+/bin/appendfat-fixture minimal-blocks /mnt/card/ahead.bin
 /bin/appendfat-fixture check /mnt/card/truncate.bin 100 T 84
-/bin/appendfat-fixture blocks /mnt/card/truncate.bin 1
+/bin/appendfat-fixture minimal-blocks /mnt/card/truncate.bin
 if [ -e /mnt/card/unlink.bin ]; then
     printf '%s\n' 'unlink.bin survived stock-vfat remount' >&2
     exit 1
@@ -33,7 +34,7 @@ umount /mnt/card
 # fall back to one-cluster allocation rather than turning an otherwise valid
 # append into ENOSPC.
 mount -t vfat /dev/vdb /mnt/card
-/bin/appendfat-fixture fill-leave-clusters /mnt/card/filler.bin 512 2
+/bin/appendfat-fixture fill-leave-clusters /mnt/card/filler.bin 2
 sync
 umount /mnt/card
 
@@ -44,6 +45,7 @@ umount /mnt/card
 
 mount -t vfat /dev/vdb /mnt/card
 /bin/appendfat-fixture check /mnt/card/near-full.bin 1024 A 68
+/bin/appendfat-fixture minimal-blocks /mnt/card/near-full.bin
 umount /mnt/card
 
 echo APPENDFAT_QEMU_RESERVE_AHEAD_PASS
