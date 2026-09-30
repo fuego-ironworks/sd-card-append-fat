@@ -11,4 +11,5 @@ Userspace experiments are kept separate from kernel appendfat semantics:
 
 Design comparison:
 
-- [comparison of `appendfat_mv` with the userspace, kernel, FatFs, and raw-storage alternatives](docs/appendfat-mv-alternatives.md).
+- [comparison of `appendfat_mv` with the userspace, kernel, FatFs, and raw-storage alternatives](docs/appendfat-mv-alternatives.md);
+- [Idriç semantic type sketch](sketch/AppendFatTypes.idric) for volume/cluster ownership, reserved capacity, append transaction state, and commit/recovery boundaries.
