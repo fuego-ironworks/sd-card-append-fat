@@ -359,21 +359,35 @@ static void require_fd_state(int fd,
 
 static void reserve_ahead_sequence(const char *path)
 {
+    struct stat st;
+    unsigned long long cluster_bytes;
+    unsigned long long first_batch_bytes;
     int fd = open(path, O_CREAT | O_TRUNC | O_WRONLY | O_APPEND, 0666);
 
     if (fd < 0) {
         perror(path);
         exit(1);
     }
+    if (fstat(fd, &st) != 0) {
+        perror("fstat reserve-ahead geometry");
+        exit(1);
+    }
+    cluster_bytes = (unsigned long long)st.st_blksize;
+    if (cluster_bytes == 0 ||
+        cluster_bytes > (unsigned long long)INT64_MAX / 4) {
+        fprintf(stderr, "invalid reserve-ahead cluster geometry\n");
+        exit(1);
+    }
+    first_batch_bytes = cluster_bytes * 4;
 
     write_bytes_fd(fd, 1, 65);
     require_fd_state(fd, 1, 4, "reserve_ahead_initial");
 
-    write_bytes_fd(fd, 2047, 66);
-    require_fd_state(fd, 2048, 4, "reserve_ahead_consumed");
+    write_bytes_fd(fd, first_batch_bytes - 1, 66);
+    require_fd_state(fd, first_batch_bytes, 4, "reserve_ahead_consumed");
 
     write_bytes_fd(fd, 1, 67);
-    require_fd_state(fd, 2049, 8, "reserve_ahead_refill");
+    require_fd_state(fd, first_batch_bytes + 1, 8, "reserve_ahead_refill");
 
     if (fsync(fd) != 0) {
         perror("fsync reserve-ahead sequence");
@@ -439,6 +453,8 @@ static void reserve_ahead_near_full(const char *path)
 {
     unsigned char byte = 69;
     struct stat st;
+    unsigned long long cluster_bytes;
+    unsigned long long two_cluster_bytes;
     ssize_t result;
     int saved_errno;
     int fd = open(path, O_CREAT | O_TRUNC | O_RDWR | O_APPEND, 0666);
@@ -447,18 +463,32 @@ static void reserve_ahead_near_full(const char *path)
         perror(path);
         exit(1);
     }
+    if (fstat(fd, &st) != 0) {
+        perror("fstat near-full geometry");
+        exit(1);
+    }
+    cluster_bytes = (unsigned long long)st.st_blksize;
+    if (cluster_bytes == 0 ||
+        cluster_bytes > (unsigned long long)INT64_MAX / 2) {
+        fprintf(stderr, "invalid near-full cluster geometry\n");
+        exit(1);
+    }
+    two_cluster_bytes = cluster_bytes * 2;
 
     write_bytes_fd(fd, 1, 65);
     require_fd_state(fd, 1, 1, "reserve_ahead_near_full_first");
 
-    write_bytes_fd(fd, 511, 66);
-    require_fd_state(fd, 512, 1, "reserve_ahead_near_full_first_full");
+    write_bytes_fd(fd, cluster_bytes - 1, 66);
+    require_fd_state(fd, cluster_bytes, 1,
+                     "reserve_ahead_near_full_first_full");
 
     write_bytes_fd(fd, 1, 67);
-    require_fd_state(fd, 513, 2, "reserve_ahead_near_full_second");
+    require_fd_state(fd, cluster_bytes + 1, 2,
+                     "reserve_ahead_near_full_second");
 
-    write_bytes_fd(fd, 511, 68);
-    require_fd_state(fd, 1024, 2, "reserve_ahead_near_full_second_full");
+    write_bytes_fd(fd, cluster_bytes - 1, 68);
+    require_fd_state(fd, two_cluster_bytes, 2,
+                     "reserve_ahead_near_full_second_full");
 
     errno = 0;
     result = write(fd, &byte, 1);
@@ -469,19 +499,13 @@ static void reserve_ahead_near_full(const char *path)
                 result, saved_errno, strerror(saved_errno));
         exit(1);
     }
-    if (fstat(fd, &st) != 0) {
-        perror("fstat near-full ENOSPC");
-        exit(1);
-    }
-    if ((unsigned long long)st.st_size != 1024 ||
-        (unsigned long long)st.st_blocks != 2) {
-        fprintf(stderr,
-                "near-full ENOSPC changed state: size=%" PRIuMAX
-                " blocks=%" PRIuMAX "\n",
-                (uintmax_t)st.st_size, (uintmax_t)st.st_blocks);
-        exit(1);
-    }
+    require_fd_state(fd, two_cluster_bytes, 2,
+                     "reserve_ahead_near_full_enospc");
 
+    if (fstat(fd, &st) != 0) {
+        perror("fstat near-full result");
+        exit(1);
+    }
     if (fsync(fd) != 0) {
         perror("fsync near-full sequence");
         exit(1);
@@ -492,8 +516,8 @@ static void reserve_ahead_near_full(const char *path)
     }
 
     printf("reserve_ahead_near_full_enospc size=%" PRIuMAX
-           " blocks=%" PRIuMAX "\n",
-           (uintmax_t)st.st_size, (uintmax_t)st.st_blocks);
+           " blocks=%" PRIuMAX " cluster_bytes=%llu\n",
+           (uintmax_t)st.st_size, (uintmax_t)st.st_blocks, cluster_bytes);
 }
 
 static void fill_leave_clusters(const char *path,
@@ -679,6 +703,56 @@ static void check_file(const char *path,
            path, expected_size, (uintmax_t)st.st_blocks);
 }
 
+static void check_reserve_ahead_result(const char *path)
+{
+    struct stat st;
+    unsigned long long cluster_bytes;
+    unsigned long long expected_size;
+    int fd = open_existing(path, O_RDONLY);
+
+    if (fstat(fd, &st) != 0) {
+        perror("fstat reserve-ahead result");
+        exit(1);
+    }
+    cluster_bytes = (unsigned long long)st.st_blksize;
+    if (close(fd) != 0) {
+        perror("close reserve-ahead result");
+        exit(1);
+    }
+    if (cluster_bytes == 0 ||
+        cluster_bytes > ((unsigned long long)INT64_MAX - 1) / 4) {
+        fprintf(stderr, "invalid reserve-ahead result geometry\n");
+        exit(1);
+    }
+    expected_size = cluster_bytes * 4 + 1;
+    check_file(path, expected_size, "A", 67);
+}
+
+static void check_near_full_result(const char *path)
+{
+    struct stat st;
+    unsigned long long cluster_bytes;
+    unsigned long long expected_size;
+    int fd = open_existing(path, O_RDONLY);
+
+    if (fstat(fd, &st) != 0) {
+        perror("fstat near-full result");
+        exit(1);
+    }
+    cluster_bytes = (unsigned long long)st.st_blksize;
+    if (close(fd) != 0) {
+        perror("close near-full result");
+        exit(1);
+    }
+    if (cluster_bytes == 0 ||
+        cluster_bytes > (unsigned long long)INT64_MAX / 2) {
+        fprintf(stderr, "invalid near-full result geometry\n");
+        exit(1);
+    }
+    expected_size = cluster_bytes * 2;
+    check_file(path, expected_size, "A", 68);
+}
+
 int main(int argc, char **argv)
 {
     const char *command;
@@ -690,7 +764,8 @@ int main(int argc, char **argv)
 			"usage: %s keep|expect-enospc|size|truncate|"
 			"reserve|reserve-clusters|extend-clusters|append|"
 			"reserve-ahead-sequence|reserve-ahead-truncate|reserve-ahead-unlink|"
-			"reserve-ahead-near-full|fill-leave-clusters|minimal-blocks|check|blocks ...\n",
+			"reserve-ahead-near-full|check-reserve-ahead|check-near-full|"
+			"fill-leave-clusters|minimal-blocks|check|blocks ...\n",
                 argv[0]);
         return 2;
     }
@@ -869,6 +944,24 @@ int main(int argc, char **argv)
             return 2;
         }
         reserve_ahead_near_full(argv[2]);
+        return 0;
+    }
+
+    if (strcmp(command, "check-reserve-ahead") == 0) {
+        if (argc != 3) {
+            fprintf(stderr, "usage: %s check-reserve-ahead PATH\n", argv[0]);
+            return 2;
+        }
+        check_reserve_ahead_result(argv[2]);
+        return 0;
+    }
+
+    if (strcmp(command, "check-near-full") == 0) {
+        if (argc != 3) {
+            fprintf(stderr, "usage: %s check-near-full PATH\n", argv[0]);
+            return 2;
+        }
+        check_near_full_result(argv[2]);
         return 0;
     }
 
