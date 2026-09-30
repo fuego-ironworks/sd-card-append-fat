@@ -287,6 +287,115 @@ static void append_bytes(const char *path,
            (uintmax_t)after.st_blocks);
 }
 
+static void fill_leave_clusters(const char *path,
+                                unsigned long long cluster_bytes,
+                                unsigned long long leave_clusters)
+{
+    unsigned char buffer[65536];
+    unsigned long long leave_bytes;
+    struct stat st;
+    off_t target_size;
+    int fd;
+
+    if (cluster_bytes == 0 ||
+        leave_clusters > (unsigned long long)INT64_MAX / cluster_bytes) {
+        fprintf(stderr, "invalid fill-leave geometry\n");
+        exit(2);
+    }
+    leave_bytes = cluster_bytes * leave_clusters;
+
+    fd = open(path, O_CREAT | O_TRUNC | O_WRONLY, 0666);
+    if (fd < 0) {
+        perror(path);
+        exit(1);
+    }
+    memset(buffer, 0x5a, sizeof(buffer));
+
+    for (;;) {
+        ssize_t written = write(fd, buffer, sizeof(buffer));
+
+        if (written > 0)
+            continue;
+        if (written < 0 && errno == ENOSPC)
+            break;
+        if (written < 0) {
+            perror("fill write");
+            exit(1);
+        }
+        fprintf(stderr, "zero-length fill write\n");
+        exit(1);
+    }
+
+    if (fstat(fd, &st) != 0) {
+        perror("fstat filled file");
+        exit(1);
+    }
+    if ((unsigned long long)st.st_size < leave_bytes ||
+        (unsigned long long)st.st_size % cluster_bytes != 0) {
+        fprintf(stderr,
+                "filled size is not compatible with requested cluster geometry: "
+                "size=%" PRIuMAX " cluster_bytes=%llu leave_clusters=%llu\n",
+                (uintmax_t)st.st_size, cluster_bytes, leave_clusters);
+        exit(1);
+    }
+
+    target_size = st.st_size - (off_t)leave_bytes;
+    if (ftruncate(fd, target_size) != 0) {
+        perror("ftruncate filled file");
+        exit(1);
+    }
+    if (fsync(fd) != 0) {
+        perror("fsync filled file");
+        exit(1);
+    }
+    if (close(fd) != 0) {
+        perror("close filled file");
+        exit(1);
+    }
+
+    printf("fill_leave path=%s full_size=%" PRIuMAX
+           " final_size=%" PRIuMAX " leave_clusters=%llu cluster_bytes=%llu\n",
+           path, (uintmax_t)st.st_size, (uintmax_t)target_size,
+           leave_clusters, cluster_bytes);
+}
+
+static void append_expect_enospc(const char *path,
+                                 unsigned long long expected_size)
+{
+    unsigned char byte = 0x45;
+    struct stat st;
+    ssize_t result;
+    int saved_errno;
+    int fd = open_existing(path, O_WRONLY | O_APPEND);
+
+    errno = 0;
+    result = write(fd, &byte, 1);
+    saved_errno = errno;
+    if (result >= 0 || saved_errno != ENOSPC) {
+        fprintf(stderr,
+                "expected append ENOSPC, result=%zd errno=%d (%s)\n",
+                result, saved_errno, strerror(saved_errno));
+        exit(1);
+    }
+    if (fstat(fd, &st) != 0) {
+        perror("fstat after append ENOSPC");
+        exit(1);
+    }
+    if ((unsigned long long)st.st_size != expected_size) {
+        fprintf(stderr,
+                "append ENOSPC changed size: expected=%llu actual=%" PRIuMAX "\n",
+                expected_size, (uintmax_t)st.st_size);
+        exit(1);
+    }
+    if (close(fd) != 0) {
+        perror("close append ENOSPC");
+        exit(1);
+    }
+
+    printf("append_enospc path=%s size=%" PRIuMAX "\n",
+           path, (uintmax_t)st.st_size);
+}
+
 static void check_file(const char *path,
                        unsigned long long expected_size,
                        const char *expected_prefix,
@@ -360,7 +469,8 @@ int main(int argc, char **argv)
     if (argc < 2) {
 		fprintf(stderr,
 			"usage: %s keep|expect-enospc|size|truncate|"
-			"reserve|reserve-clusters|extend-clusters|append|check|blocks ...\n",
+			"reserve|reserve-clusters|extend-clusters|append|append-enospc|"
+			"fill-leave-clusters|check|blocks ...\n",
                 argv[0]);
         return 2;
     }
@@ -503,6 +613,28 @@ int main(int argc, char **argv)
             return 2;
         }
         append_bytes(argv[2], parse_number(argv[3]), (unsigned char)value);
+        return 0;
+    }
+
+    if (strcmp(command, "fill-leave-clusters") == 0) {
+        if (argc != 5) {
+            fprintf(stderr,
+                    "usage: %s fill-leave-clusters PATH CLUSTER_BYTES LEAVE_CLUSTERS\n",
+                    argv[0]);
+            return 2;
+        }
+        fill_leave_clusters(argv[2], parse_number(argv[3]), parse_number(argv[4]));
+        return 0;
+    }
+
+    if (strcmp(command, "append-enospc") == 0) {
+        if (argc != 4) {
+            fprintf(stderr,
+                    "usage: %s append-enospc PATH EXPECTED_SIZE\n",
+                    argv[0]);
+            return 2;
+        }
+        append_expect_enospc(argv[2], parse_number(argv[3]));
         return 0;
     }
 
