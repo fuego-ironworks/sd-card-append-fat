@@ -103,7 +103,7 @@ static struct fat_floppy_defaults {
 
 #define APPENDFAT_APPEND_AHEAD_CLUSTERS	(MAX_BUF_PER_PAGE / 2)
 
-static int appendfat_add_clusters(struct inode *inode, int nr_cluster)
+int appendfat_add_clusters(struct inode *inode, int nr_cluster)
 {
 	int clusters[MAX_BUF_PER_PAGE / 2];
 	int err;
