@@ -1,0 +1,71 @@
+#!/bin/sh
+set -eu
+
+export PATH=/bin
+
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev
+mkdir -p /mnt/card
+
+# Normal reserve-ahead behavior: 512-byte clusters and a four-cluster batch.
+mount -t appendfat /dev/vda /mnt/card
+
+/bin/appendfat-fixture append /mnt/card/ahead.bin 1 65
+/bin/appendfat-fixture blocks /mnt/card/ahead.bin 4
+
+/bin/appendfat-fixture append /mnt/card/ahead.bin 2047 66
+/bin/appendfat-fixture blocks /mnt/card/ahead.bin 4
+
+/bin/appendfat-fixture append /mnt/card/ahead.bin 1 67
+/bin/appendfat-fixture blocks /mnt/card/ahead.bin 8
+/bin/appendfat-fixture check /mnt/card/ahead.bin 2049 A 67
+
+/bin/appendfat-fixture append /mnt/card/truncate.bin 600 84
+/bin/appendfat-fixture blocks /mnt/card/truncate.bin 4
+/bin/appendfat-fixture truncate /mnt/card/truncate.bin 100
+/bin/appendfat-fixture blocks /mnt/card/truncate.bin 1
+
+/bin/appendfat-fixture append /mnt/card/unlink.bin 1 85
+/bin/appendfat-fixture blocks /mnt/card/unlink.bin 4
+rm /mnt/card/unlink.bin
+
+sync
+umount /mnt/card
+
+mount -t vfat /dev/vda /mnt/card
+/bin/appendfat-fixture check /mnt/card/ahead.bin 2049 A 67
+/bin/appendfat-fixture check /mnt/card/truncate.bin 100 T 84
+if [ -e /mnt/card/unlink.bin ]; then
+    printf '%s\n' 'unlink.bin survived stock-vfat remount' >&2
+    exit 1
+fi
+umount /mnt/card
+
+# Leave exactly two data clusters free under stock vfat.  Reserve-ahead must
+# fall back to one-cluster allocation rather than turning an otherwise valid
+# append into ENOSPC.
+mount -t vfat /dev/vdb /mnt/card
+/bin/appendfat-fixture fill-leave-clusters /mnt/card/filler.bin 512 2
+sync
+umount /mnt/card
+
+mount -t appendfat /dev/vdb /mnt/card
+/bin/appendfat-fixture append /mnt/card/near-full.bin 1 65
+/bin/appendfat-fixture blocks /mnt/card/near-full.bin 1
+/bin/appendfat-fixture append /mnt/card/near-full.bin 511 66
+/bin/appendfat-fixture blocks /mnt/card/near-full.bin 1
+/bin/appendfat-fixture append /mnt/card/near-full.bin 1 67
+/bin/appendfat-fixture blocks /mnt/card/near-full.bin 2
+/bin/appendfat-fixture append /mnt/card/near-full.bin 511 68
+/bin/appendfat-fixture blocks /mnt/card/near-full.bin 2
+/bin/appendfat-fixture append-enospc /mnt/card/near-full.bin 1024
+sync
+umount /mnt/card
+
+mount -t vfat /dev/vdb /mnt/card
+/bin/appendfat-fixture check /mnt/card/near-full.bin 1024 A 68
+umount /mnt/card
+
+echo APPENDFAT_QEMU_RESERVE_AHEAD_PASS
+poweroff -f
