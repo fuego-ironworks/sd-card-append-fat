@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -314,14 +315,21 @@ static void write_bytes_fd(int fd,
     }
 }
 
-static unsigned long long stat_blocks_per_cluster(const struct stat *st)
+static unsigned long long fd_cluster_bytes(int fd)
 {
-    if (st->st_blksize <= 0 || st->st_blksize % 512 != 0) {
-        fprintf(stderr, "invalid filesystem block size: %" PRIuMAX "\n",
-                (uintmax_t)st->st_blksize);
+    struct statvfs fs;
+    unsigned long long cluster_bytes;
+
+    if (fstatvfs(fd, &fs) != 0) {
+        perror("fstatvfs");
         exit(1);
     }
-    return (unsigned long long)st->st_blksize / 512;
+    cluster_bytes = (unsigned long long)fs.f_bsize;
+    if (cluster_bytes == 0 || cluster_bytes % 512 != 0) {
+        fprintf(stderr, "invalid FAT cluster size: %llu\n", cluster_bytes);
+        exit(1);
+    }
+    return cluster_bytes;
 }
 
 static void require_fd_state(int fd,
@@ -330,6 +338,7 @@ static void require_fd_state(int fd,
                              const char *label)
 {
     struct stat st;
+    unsigned long long cluster_bytes;
     unsigned long long blocks_per_cluster;
     unsigned long long expected_blocks;
 
@@ -337,7 +346,8 @@ static void require_fd_state(int fd,
         perror("fstat sequence");
         exit(1);
     }
-    blocks_per_cluster = stat_blocks_per_cluster(&st);
+    cluster_bytes = fd_cluster_bytes(fd);
+    blocks_per_cluster = cluster_bytes / 512;
     expected_blocks = expected_clusters * blocks_per_cluster;
     if ((unsigned long long)st.st_size != expected_size ||
         (unsigned long long)st.st_blocks != expected_blocks) {
@@ -347,19 +357,18 @@ static void require_fd_state(int fd,
                 " cluster_bytes=%" PRIuMAX "\n",
                 label, expected_size, expected_clusters, expected_blocks,
                 (uintmax_t)st.st_size, (uintmax_t)st.st_blocks,
-                (uintmax_t)st.st_blksize);
+                (uintmax_t)cluster_bytes);
         exit(1);
     }
 
     printf("%s size=%" PRIuMAX " clusters=%llu blocks=%" PRIuMAX
            " cluster_bytes=%" PRIuMAX "\n",
            label, (uintmax_t)st.st_size, expected_clusters,
-           (uintmax_t)st.st_blocks, (uintmax_t)st.st_blksize);
+           (uintmax_t)st.st_blocks, (uintmax_t)cluster_bytes);
 }
 
 static void reserve_ahead_sequence(const char *path)
 {
-    struct stat st;
     unsigned long long cluster_bytes;
     unsigned long long first_batch_bytes;
     int fd = open(path, O_CREAT | O_TRUNC | O_WRONLY | O_APPEND, 0666);
@@ -368,11 +377,7 @@ static void reserve_ahead_sequence(const char *path)
         perror(path);
         exit(1);
     }
-    if (fstat(fd, &st) != 0) {
-        perror("fstat reserve-ahead geometry");
-        exit(1);
-    }
-    cluster_bytes = (unsigned long long)st.st_blksize;
+    cluster_bytes = fd_cluster_bytes(fd);
     if (cluster_bytes == 0 ||
         cluster_bytes > (unsigned long long)INT64_MAX / 4) {
         fprintf(stderr, "invalid reserve-ahead cluster geometry\n");
@@ -463,11 +468,7 @@ static void reserve_ahead_near_full(const char *path)
         perror(path);
         exit(1);
     }
-    if (fstat(fd, &st) != 0) {
-        perror("fstat near-full geometry");
-        exit(1);
-    }
-    cluster_bytes = (unsigned long long)st.st_blksize;
+    cluster_bytes = fd_cluster_bytes(fd);
     if (cluster_bytes == 0 ||
         cluster_bytes > (unsigned long long)INT64_MAX / 2) {
         fprintf(stderr, "invalid near-full cluster geometry\n");
@@ -535,11 +536,7 @@ static void fill_leave_clusters(const char *path,
         perror(path);
         exit(1);
     }
-    if (fstat(fd, &st) != 0) {
-        perror("fstat fill geometry");
-        exit(1);
-    }
-    cluster_bytes = (unsigned long long)st.st_blksize;
+    cluster_bytes = fd_cluster_bytes(fd);
     if (cluster_bytes == 0 ||
         leave_clusters > (unsigned long long)INT64_MAX / cluster_bytes) {
         fprintf(stderr, "invalid fill-leave geometry\n");
@@ -608,12 +605,12 @@ static void require_minimal_allocation(const char *path)
         perror("fstat minimal allocation");
         exit(1);
     }
+    cluster_bytes = fd_cluster_bytes(fd);
     if (close(fd) != 0) {
         perror("close minimal allocation");
         exit(1);
     }
 
-    cluster_bytes = (unsigned long long)st.st_blksize;
     if (cluster_bytes == 0 || cluster_bytes % 512 != 0) {
         fprintf(stderr, "invalid minimal-allocation cluster size\n");
         exit(1);
@@ -705,16 +702,11 @@ static void check_file(const char *path,
 
 static void check_reserve_ahead_result(const char *path)
 {
-    struct stat st;
     unsigned long long cluster_bytes;
     unsigned long long expected_size;
     int fd = open_existing(path, O_RDONLY);
 
-    if (fstat(fd, &st) != 0) {
-        perror("fstat reserve-ahead result");
-        exit(1);
-    }
-    cluster_bytes = (unsigned long long)st.st_blksize;
+    cluster_bytes = fd_cluster_bytes(fd);
     if (close(fd) != 0) {
         perror("close reserve-ahead result");
         exit(1);
@@ -730,16 +722,11 @@ static void check_reserve_ahead_result(const char *path)
 
 static void check_near_full_result(const char *path)
 {
-    struct stat st;
     unsigned long long cluster_bytes;
     unsigned long long expected_size;
     int fd = open_existing(path, O_RDONLY);
 
-    if (fstat(fd, &st) != 0) {
-        perror("fstat near-full result");
-        exit(1);
-    }
-    cluster_bytes = (unsigned long long)st.st_blksize;
+    cluster_bytes = fd_cluster_bytes(fd);
     if (close(fd) != 0) {
         perror("close near-full result");
         exit(1);
