@@ -20,7 +20,7 @@ sync
 umount /mnt/card
 
 mount -t vfat /dev/vda /mnt/card
-/bin/appendfat-fixture check /mnt/card/ahead.bin 2049 A 67
+/bin/appendfat-fixture check-reserve-ahead /mnt/card/ahead.bin
 /bin/appendfat-fixture minimal-blocks /mnt/card/ahead.bin
 /bin/appendfat-fixture check /mnt/card/truncate.bin 100 T 84
 /bin/appendfat-fixture minimal-blocks /mnt/card/truncate.bin
@@ -44,7 +44,7 @@ sync
 umount /mnt/card
 
 mount -t vfat /dev/vdb /mnt/card
-/bin/appendfat-fixture check /mnt/card/near-full.bin 1024 A 68
+/bin/appendfat-fixture check-near-full /mnt/card/near-full.bin
 /bin/appendfat-fixture minimal-blocks /mnt/card/near-full.bin
 umount /mnt/card
 
