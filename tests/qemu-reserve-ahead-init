@@ -35,7 +35,9 @@ umount /mnt/card
 
 mount -t vfat /dev/vda /mnt/card
 /bin/appendfat-fixture check /mnt/card/ahead.bin 2049 A 67
+/bin/appendfat-fixture blocks /mnt/card/ahead.bin 5
 /bin/appendfat-fixture check /mnt/card/truncate.bin 100 T 84
+/bin/appendfat-fixture blocks /mnt/card/truncate.bin 1
 if [ -e /mnt/card/unlink.bin ]; then
     printf '%s\n' 'unlink.bin survived stock-vfat remount' >&2
     exit 1
