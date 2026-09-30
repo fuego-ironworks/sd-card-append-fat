@@ -314,29 +314,47 @@ static void write_bytes_fd(int fd,
     }
 }
 
+static unsigned long long stat_blocks_per_cluster(const struct stat *st)
+{
+    if (st->st_blksize <= 0 || st->st_blksize % 512 != 0) {
+        fprintf(stderr, "invalid filesystem block size: %" PRIuMAX "\n",
+                (uintmax_t)st->st_blksize);
+        exit(1);
+    }
+    return (unsigned long long)st->st_blksize / 512;
+}
+
 static void require_fd_state(int fd,
                              unsigned long long expected_size,
-                             unsigned long long expected_blocks,
+                             unsigned long long expected_clusters,
                              const char *label)
 {
     struct stat st;
+    unsigned long long blocks_per_cluster;
+    unsigned long long expected_blocks;
 
     if (fstat(fd, &st) != 0) {
         perror("fstat sequence");
         exit(1);
     }
+    blocks_per_cluster = stat_blocks_per_cluster(&st);
+    expected_blocks = expected_clusters * blocks_per_cluster;
     if ((unsigned long long)st.st_size != expected_size ||
         (unsigned long long)st.st_blocks != expected_blocks) {
         fprintf(stderr,
-                "%s state mismatch: expected size=%llu blocks=%llu "
-                "actual size=%" PRIuMAX " blocks=%" PRIuMAX "\n",
-                label, expected_size, expected_blocks,
-                (uintmax_t)st.st_size, (uintmax_t)st.st_blocks);
+                "%s state mismatch: expected size=%llu clusters=%llu "
+                "blocks=%llu actual size=%" PRIuMAX " blocks=%" PRIuMAX
+                " cluster_bytes=%" PRIuMAX "\n",
+                label, expected_size, expected_clusters, expected_blocks,
+                (uintmax_t)st.st_size, (uintmax_t)st.st_blocks,
+                (uintmax_t)st.st_blksize);
         exit(1);
     }
 
-    printf("%s size=%" PRIuMAX " blocks=%" PRIuMAX "\n",
-           label, (uintmax_t)st.st_size, (uintmax_t)st.st_blocks);
+    printf("%s size=%" PRIuMAX " clusters=%llu blocks=%" PRIuMAX
+           " cluster_bytes=%" PRIuMAX "\n",
+           label, (uintmax_t)st.st_size, expected_clusters,
+           (uintmax_t)st.st_blocks, (uintmax_t)st.st_blksize);
 }
 
 static void reserve_ahead_sequence(const char *path)
@@ -479,27 +497,31 @@ static void reserve_ahead_near_full(const char *path)
 }
 
 static void fill_leave_clusters(const char *path,
-                                unsigned long long cluster_bytes,
                                 unsigned long long leave_clusters)
 {
     unsigned char buffer[65536];
+    unsigned long long cluster_bytes;
     unsigned long long leave_bytes;
     struct stat st;
     off_t target_size;
     int fd;
-
-    if (cluster_bytes == 0 ||
-        leave_clusters > (unsigned long long)INT64_MAX / cluster_bytes) {
-        fprintf(stderr, "invalid fill-leave geometry\n");
-        exit(2);
-    }
-    leave_bytes = cluster_bytes * leave_clusters;
 
     fd = open(path, O_CREAT | O_TRUNC | O_WRONLY, 0666);
     if (fd < 0) {
         perror(path);
         exit(1);
     }
+    if (fstat(fd, &st) != 0) {
+        perror("fstat fill geometry");
+        exit(1);
+    }
+    cluster_bytes = (unsigned long long)st.st_blksize;
+    if (cluster_bytes == 0 ||
+        leave_clusters > (unsigned long long)INT64_MAX / cluster_bytes) {
+        fprintf(stderr, "invalid fill-leave geometry\n");
+        exit(2);
+    }
+    leave_bytes = cluster_bytes * leave_clusters;
     memset(buffer, 0x5a, sizeof(buffer));
 
     for (;;) {
@@ -548,6 +570,49 @@ static void fill_leave_clusters(const char *path,
            " final_size=%" PRIuMAX " leave_clusters=%llu cluster_bytes=%llu\n",
            path, (uintmax_t)st.st_size, (uintmax_t)target_size,
            leave_clusters, cluster_bytes);
+}
+
+static void require_minimal_allocation(const char *path)
+{
+    struct stat st;
+    unsigned long long cluster_bytes;
+    unsigned long long clusters;
+    unsigned long long expected_blocks;
+    int fd = open_existing(path, O_RDONLY);
+
+    if (fstat(fd, &st) != 0) {
+        perror("fstat minimal allocation");
+        exit(1);
+    }
+    if (close(fd) != 0) {
+        perror("close minimal allocation");
+        exit(1);
+    }
+
+    cluster_bytes = (unsigned long long)st.st_blksize;
+    if (cluster_bytes == 0 || cluster_bytes % 512 != 0) {
+        fprintf(stderr, "invalid minimal-allocation cluster size\n");
+        exit(1);
+    }
+    clusters = st.st_size == 0
+        ? 0
+        : ((unsigned long long)st.st_size + cluster_bytes - 1) / cluster_bytes;
+    expected_blocks = clusters * (cluster_bytes / 512);
+
+    if ((unsigned long long)st.st_blocks != expected_blocks) {
+        fprintf(stderr,
+                "nonminimal allocation for %s: size=%" PRIuMAX
+                " blocks=%" PRIuMAX " expected_blocks=%llu"
+                " cluster_bytes=%llu\n",
+                path, (uintmax_t)st.st_size, (uintmax_t)st.st_blocks,
+                expected_blocks, cluster_bytes);
+        exit(1);
+    }
+
+    printf("minimal_allocation path=%s size=%" PRIuMAX
+           " clusters=%llu blocks=%" PRIuMAX " cluster_bytes=%llu\n",
+           path, (uintmax_t)st.st_size, clusters,
+           (uintmax_t)st.st_blocks, cluster_bytes);
 }
 
 static void check_file(const char *path,
@@ -625,7 +690,7 @@ int main(int argc, char **argv)
 			"usage: %s keep|expect-enospc|size|truncate|"
 			"reserve|reserve-clusters|extend-clusters|append|"
 			"reserve-ahead-sequence|reserve-ahead-truncate|reserve-ahead-unlink|"
-			"reserve-ahead-near-full|fill-leave-clusters|check|blocks ...\n",
+			"reserve-ahead-near-full|fill-leave-clusters|minimal-blocks|check|blocks ...\n",
                 argv[0]);
         return 2;
     }
@@ -808,13 +873,22 @@ int main(int argc, char **argv)
     }
 
     if (strcmp(command, "fill-leave-clusters") == 0) {
-        if (argc != 5) {
+        if (argc != 4) {
             fprintf(stderr,
-                    "usage: %s fill-leave-clusters PATH CLUSTER_BYTES LEAVE_CLUSTERS\n",
+                    "usage: %s fill-leave-clusters PATH LEAVE_CLUSTERS\n",
                     argv[0]);
             return 2;
         }
-        fill_leave_clusters(argv[2], parse_number(argv[3]), parse_number(argv[4]));
+        fill_leave_clusters(argv[2], parse_number(argv[3]));
+        return 0;
+    }
+
+    if (strcmp(command, "minimal-blocks") == 0) {
+        if (argc != 3) {
+            fprintf(stderr, "usage: %s minimal-blocks PATH\n", argv[0]);
+            return 2;
+        }
+        require_minimal_allocation(argv[2]);
         return 0;
     }
 
