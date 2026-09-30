@@ -287,6 +287,197 @@ static void append_bytes(const char *path,
            (uintmax_t)after.st_blocks);
 }
 
+static void write_bytes_fd(int fd,
+                           unsigned long long count,
+                           unsigned char value)
+{
+    unsigned char buffer[4096];
+    unsigned long long left = count;
+
+    memset(buffer, value, sizeof(buffer));
+    while (left > 0) {
+        size_t amount =
+            left > (unsigned long long)sizeof(buffer)
+                ? sizeof(buffer)
+                : (size_t)left;
+        ssize_t written = write(fd, buffer, amount);
+
+        if (written < 0) {
+            perror("write sequence");
+            exit(1);
+        }
+        if (written == 0) {
+            fprintf(stderr, "zero-length sequence write\n");
+            exit(1);
+        }
+        left -= (unsigned long long)written;
+    }
+}
+
+static void require_fd_state(int fd,
+                             unsigned long long expected_size,
+                             unsigned long long expected_blocks,
+                             const char *label)
+{
+    struct stat st;
+
+    if (fstat(fd, &st) != 0) {
+        perror("fstat sequence");
+        exit(1);
+    }
+    if ((unsigned long long)st.st_size != expected_size ||
+        (unsigned long long)st.st_blocks != expected_blocks) {
+        fprintf(stderr,
+                "%s state mismatch: expected size=%llu blocks=%llu "
+                "actual size=%" PRIuMAX " blocks=%" PRIuMAX "\n",
+                label, expected_size, expected_blocks,
+                (uintmax_t)st.st_size, (uintmax_t)st.st_blocks);
+        exit(1);
+    }
+
+    printf("%s size=%" PRIuMAX " blocks=%" PRIuMAX "\n",
+           label, (uintmax_t)st.st_size, (uintmax_t)st.st_blocks);
+}
+
+static void reserve_ahead_sequence(const char *path)
+{
+    int fd = open(path, O_CREAT | O_TRUNC | O_WRONLY | O_APPEND, 0666);
+
+    if (fd < 0) {
+        perror(path);
+        exit(1);
+    }
+
+    write_bytes_fd(fd, 1, 65);
+    require_fd_state(fd, 1, 4, "reserve_ahead_initial");
+
+    write_bytes_fd(fd, 2047, 66);
+    require_fd_state(fd, 2048, 4, "reserve_ahead_consumed");
+
+    write_bytes_fd(fd, 1, 67);
+    require_fd_state(fd, 2049, 8, "reserve_ahead_refill");
+
+    if (fsync(fd) != 0) {
+        perror("fsync reserve-ahead sequence");
+        exit(1);
+    }
+    if (close(fd) != 0) {
+        perror("close reserve-ahead sequence");
+        exit(1);
+    }
+}
+
+static void reserve_ahead_truncate(const char *path)
+{
+    int fd = open(path, O_CREAT | O_TRUNC | O_RDWR, 0666);
+
+    if (fd < 0) {
+        perror(path);
+        exit(1);
+    }
+
+    write_bytes_fd(fd, 600, 84);
+    require_fd_state(fd, 600, 4, "reserve_ahead_before_truncate");
+
+    if (ftruncate(fd, 100) != 0) {
+        perror("reserve-ahead ftruncate");
+        exit(1);
+    }
+    require_fd_state(fd, 100, 1, "reserve_ahead_after_truncate");
+
+    if (fsync(fd) != 0) {
+        perror("fsync reserve-ahead truncate");
+        exit(1);
+    }
+    if (close(fd) != 0) {
+        perror("close reserve-ahead truncate");
+        exit(1);
+    }
+}
+
+static void reserve_ahead_unlink(const char *path)
+{
+    int fd = open(path, O_CREAT | O_TRUNC | O_RDWR, 0666);
+
+    if (fd < 0) {
+        perror(path);
+        exit(1);
+    }
+
+    write_bytes_fd(fd, 1, 85);
+    require_fd_state(fd, 1, 4, "reserve_ahead_before_unlink");
+
+    if (unlink(path) != 0) {
+        perror("reserve-ahead unlink");
+        exit(1);
+    }
+    if (close(fd) != 0) {
+        perror("close reserve-ahead unlinked file");
+        exit(1);
+    }
+}
+
+static void reserve_ahead_near_full(const char *path)
+{
+    unsigned char byte = 69;
+    struct stat st;
+    ssize_t result;
+    int saved_errno;
+    int fd = open(path, O_CREAT | O_TRUNC | O_RDWR | O_APPEND, 0666);
+
+    if (fd < 0) {
+        perror(path);
+        exit(1);
+    }
+
+    write_bytes_fd(fd, 1, 65);
+    require_fd_state(fd, 1, 1, "reserve_ahead_near_full_first");
+
+    write_bytes_fd(fd, 511, 66);
+    require_fd_state(fd, 512, 1, "reserve_ahead_near_full_first_full");
+
+    write_bytes_fd(fd, 1, 67);
+    require_fd_state(fd, 513, 2, "reserve_ahead_near_full_second");
+
+    write_bytes_fd(fd, 511, 68);
+    require_fd_state(fd, 1024, 2, "reserve_ahead_near_full_second_full");
+
+    errno = 0;
+    result = write(fd, &byte, 1);
+    saved_errno = errno;
+    if (result >= 0 || saved_errno != ENOSPC) {
+        fprintf(stderr,
+                "expected near-full append ENOSPC, result=%zd errno=%d (%s)\n",
+                result, saved_errno, strerror(saved_errno));
+        exit(1);
+    }
+    if (fstat(fd, &st) != 0) {
+        perror("fstat near-full ENOSPC");
+        exit(1);
+    }
+    if ((unsigned long long)st.st_size != 1024 ||
+        (unsigned long long)st.st_blocks != 2) {
+        fprintf(stderr,
+                "near-full ENOSPC changed state: size=%" PRIuMAX
+                " blocks=%" PRIuMAX "\n",
+                (uintmax_t)st.st_size, (uintmax_t)st.st_blocks);
+        exit(1);
+    }
+
+    if (fsync(fd) != 0) {
+        perror("fsync near-full sequence");
+        exit(1);
+    }
+    if (close(fd) != 0) {
+        perror("close near-full sequence");
+        exit(1);
+    }
+
+    printf("reserve_ahead_near_full_enospc size=%" PRIuMAX
+           " blocks=%" PRIuMAX "\n",
+           (uintmax_t)st.st_size, (uintmax_t)st.st_blocks);
+}
+
 static void fill_leave_clusters(const char *path,
                                 unsigned long long cluster_bytes,
                                 unsigned long long leave_clusters)
@@ -470,7 +661,8 @@ int main(int argc, char **argv)
 		fprintf(stderr,
 			"usage: %s keep|expect-enospc|size|truncate|"
 			"reserve|reserve-clusters|extend-clusters|append|append-enospc|"
-			"fill-leave-clusters|check|blocks ...\n",
+			"reserve-ahead-sequence|reserve-ahead-truncate|reserve-ahead-unlink|"
+			"reserve-ahead-near-full|fill-leave-clusters|check|blocks ...\n",
                 argv[0]);
         return 2;
     }
@@ -613,6 +805,42 @@ int main(int argc, char **argv)
             return 2;
         }
         append_bytes(argv[2], parse_number(argv[3]), (unsigned char)value);
+        return 0;
+    }
+
+    if (strcmp(command, "reserve-ahead-sequence") == 0) {
+        if (argc != 3) {
+            fprintf(stderr, "usage: %s reserve-ahead-sequence PATH\n", argv[0]);
+            return 2;
+        }
+        reserve_ahead_sequence(argv[2]);
+        return 0;
+    }
+
+    if (strcmp(command, "reserve-ahead-truncate") == 0) {
+        if (argc != 3) {
+            fprintf(stderr, "usage: %s reserve-ahead-truncate PATH\n", argv[0]);
+            return 2;
+        }
+        reserve_ahead_truncate(argv[2]);
+        return 0;
+    }
+
+    if (strcmp(command, "reserve-ahead-unlink") == 0) {
+        if (argc != 3) {
+            fprintf(stderr, "usage: %s reserve-ahead-unlink PATH\n", argv[0]);
+            return 2;
+        }
+        reserve_ahead_unlink(argv[2]);
+        return 0;
+    }
+
+    if (strcmp(command, "reserve-ahead-near-full") == 0) {
+        if (argc != 3) {
+            fprintf(stderr, "usage: %s reserve-ahead-near-full PATH\n", argv[0]);
+            return 2;
+        }
+        reserve_ahead_near_full(argv[2]);
         return 0;
     }
 
