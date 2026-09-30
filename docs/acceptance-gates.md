@@ -37,21 +37,35 @@ This is deliberately not described as exhaustive coverage of every FAT
 feature or every mount option. New options and feature-specific fixtures can
 be added without changing the claim made by existing rows.
 
-### Keep-size reservation compatibility
+### Keep-size reservation batching
 
-`tests/qemu-keep-size.sh` characterizes the existing Linux
-`FALLOC_FL_KEEP_SIZE` mechanism before append-arena allocation semantics
-change. It covers:
+`tests/qemu-keep-size.sh` checks the explicit Linux
+`FALLOC_FL_KEEP_SIZE` path after bounded multi-cluster batching. It covers:
 
 - reservation on a zero-length file;
 - logical size staying unchanged after reservation;
+- a reservation fitting in one cluster and one spanning more than one
+  allocator batch;
+- an existing file receiving additional reservation and a request that already
+  fits in allocated capacity;
+- repeated reservations that add no capacity;
 - partial consumption of a reservation;
-- a reservation spanning multiple clusters;
+- full consumption of a reservation;
 - close/unmount with unused reserved capacity;
 - truncate after reservation;
+- unlink after reservation;
 - ENOSPC during reservation;
 - stock-vfat remount after appendfat reservation;
 - host `fsck.fat -n -v`.
+
+The test-only allocation counters and the representative before/after QEMU
+results are recorded in
+[`keep-size-batching-measurements.md`](keep-size-batching-measurements.md).
+For the 17-cluster workload, the batched path reduced allocator calls from 17
+to 5 and FSINFO dirty notifications from 17 to 5. It kept the total measured
+FAT entry changes at 33 and the guest-visible virtio writes at 4 operations / 4
+sectors. This is evidence of fewer allocator/buffer-processing operations, not
+fewer on-device writes for that workload.
 
 `tests/qemu-keep-size-characterization.sh` separately pins the allocation
 state at three clean boundaries: unused reservation, partial logical
@@ -70,9 +84,8 @@ present by the remount check. Keep-size allocation can still be evaluated as
 a mounted-session batching mechanism, but persistence requires a different
 design or a separate on-disk representation.
 
-The same fixture is intended to remain green when reservation batching is
-introduced. It does not by itself prove a future automatic reserve-ahead
-policy.
+The same fixture remains green with reservation batching. It does not by
+itself prove a future automatic reserve-ahead policy.
 
 ### Abrupt power cut after durable writes
 
@@ -147,9 +160,12 @@ power interruption of real media remain separate physical procedures.
 
 ## Append-arena semantic gate
 
-The current tree intentionally has no new append-arena allocation semantics.
-The first semantic change must keep the keep-size compatibility fixture green
-and add tests for whatever new policy is actually implemented.
+The first append-arena change is limited to batching explicit keep-size
+reservations. It adds no automatic reserve-ahead policy, persistence across
+unmount, mount option, contiguous-cluster guarantee, or new on-disk metadata.
+The new explicit-reservation path must keep the keep-size compatibility fixture
+green and preserve the original ENOSPC result, including already attached
+clusters when the request cannot be fully satisfied.
 
 At minimum a future automatic reserve-ahead policy needs explicit tests for its
 initial reservation, refill threshold and size, maximum unused reservation,

@@ -476,6 +476,10 @@ int appendfat_alloc_clusters(struct inode *inode, int *cluster, int nr_cluster)
 	struct fat_entry fatent, prev_ent;
 	struct buffer_head *bhs[MAX_BUF_PER_PAGE];
 	int i, count, err, nr_bhs, idx_clus;
+#ifdef APPENDFAT_ALLOC_METRICS
+	int metric_fat_updates = 0;
+	bool metric_enabled = MSDOS_I(inode)->alloc_metrics;
+#endif
 
 	BUG_ON(nr_cluster > (MAX_BUF_PER_PAGE / 2));	/* fixed limit */
 
@@ -483,6 +487,11 @@ int appendfat_alloc_clusters(struct inode *inode, int *cluster, int nr_cluster)
 	if (sbi->free_clusters != -1 && sbi->free_clus_valid &&
 	    sbi->free_clusters < nr_cluster) {
 		unlock_fat(sbi);
+#ifdef APPENDFAT_ALLOC_METRICS
+		if (metric_enabled)
+			pr_info("APPENDFAT_ALLOC_METRIC alloc requested=%d allocated=0 fat_updates=0 fat_buffers=0 mirror_buffers=0 fsinfo_dirty_calls=0 result=%d\n",
+				nr_cluster, -ENOSPC);
+#endif
 		return -ENOSPC;
 	}
 
@@ -506,8 +515,17 @@ int appendfat_alloc_clusters(struct inode *inode, int *cluster, int nr_cluster)
 
 				/* make the cluster chain */
 				ops->ent_put(&fatent, FAT_ENT_EOF);
-				if (prev_ent.nr_bhs)
+#ifdef APPENDFAT_ALLOC_METRICS
+				if (metric_enabled)
+					metric_fat_updates++;
+#endif
+				if (prev_ent.nr_bhs) {
 					ops->ent_put(&prev_ent, entry);
+#ifdef APPENDFAT_ALLOC_METRICS
+					if (metric_enabled)
+						metric_fat_updates++;
+#endif
+				}
 
 				fat_collect_bhs(bhs, &nr_bhs, &fatent);
 
@@ -552,6 +570,12 @@ out:
 
 	if (err && idx_clus)
 		appendfat_free_clusters(inode, cluster[0]);
+#ifdef APPENDFAT_ALLOC_METRICS
+	if (metric_enabled)
+		pr_info("APPENDFAT_ALLOC_METRIC alloc requested=%d allocated=%d fat_updates=%d fat_buffers=%d mirror_buffers=%d fsinfo_dirty_calls=1 result=%d\n",
+			nr_cluster, idx_clus, metric_fat_updates, nr_bhs,
+			nr_bhs * (sbi->fats - 1), err);
+#endif
 
 	return err;
 }

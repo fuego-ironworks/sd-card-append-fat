@@ -264,6 +264,11 @@ static long fat_fallocate(struct file *file, int mode,
 			  loff_t offset, loff_t len)
 {
 	int nr_cluster; /* Number of clusters to be allocated */
+	int batch;
+	int clusters[MAX_BUF_PER_PAGE / 2];
+#ifdef APPENDFAT_ALLOC_METRICS
+	bool metric_enabled = false;
+#endif
 	loff_t mm_bytes; /* Number of bytes to be allocated for file */
 	loff_t ondisksize; /* block aligned on-disk size in bytes*/
 	struct inode *inode = file->f_mapping->host;
@@ -289,12 +294,45 @@ static long fat_fallocate(struct file *file, int mode,
 		mm_bytes = offset + len - ondisksize;
 		nr_cluster = (mm_bytes + (sbi->cluster_size - 1)) >>
 			sbi->cluster_bits;
+#ifdef APPENDFAT_ALLOC_METRICS
+		metric_enabled = nr_cluster <= 64;
+		if (metric_enabled) {
+			MSDOS_I(inode)->alloc_metrics = true;
+			pr_info("APPENDFAT_ALLOC_METRIC reserve_start bytes=%lld additional_clusters=%d allocated_clusters=%llu\n",
+				(long long)len, nr_cluster,
+				(unsigned long long)(inode->i_blocks >>
+						     (sbi->cluster_bits - 9)));
+		}
+#endif
 
-		/* Start the allocation.We are not zeroing out the clusters */
-		while (nr_cluster-- > 0) {
-			err = appendfat_add_cluster(inode);
+		/* Start the allocation. We are not zeroing out the clusters. */
+		while (nr_cluster > 0) {
+			batch = min_t(int, nr_cluster, ARRAY_SIZE(clusters));
+			err = appendfat_alloc_clusters(inode, clusters, batch);
+			if (err == -ENOSPC) {
+				/*
+				 * Preserve the old partial-allocation result on ENOSPC.
+				 * The multi-cluster allocator unwinds an incomplete batch;
+				 * finish this failing request through the old path so all
+				 * clusters available before ENOSPC remain attached.
+				 */
+				while (nr_cluster > 0) {
+					err = appendfat_add_cluster(inode);
+					if (err)
+						goto error;
+					nr_cluster--;
+				}
+				break;
+			}
 			if (err)
 				goto error;
+
+			err = appendfat_chain_add(inode, clusters[0], batch);
+			if (err) {
+				appendfat_free_clusters(inode, clusters[0]);
+				goto error;
+			}
+			nr_cluster -= batch;
 		}
 	} else {
 		if ((offset + len) <= i_size_read(inode))
@@ -305,6 +343,15 @@ static long fat_fallocate(struct file *file, int mode,
 	}
 
 error:
+#ifdef APPENDFAT_ALLOC_METRICS
+	if (metric_enabled) {
+		pr_info("APPENDFAT_ALLOC_METRIC reserve_end result=%d allocated_clusters=%llu\n",
+			err,
+			(unsigned long long)(inode->i_blocks >>
+					     (sbi->cluster_bits - 9)));
+		MSDOS_I(inode)->alloc_metrics = false;
+	}
+#endif
 	inode_unlock(inode);
 	return err;
 }

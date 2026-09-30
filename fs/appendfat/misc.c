@@ -109,6 +109,10 @@ int appendfat_chain_add(struct inode *inode, int new_dclus, int nr_cluster)
 	struct super_block *sb = inode->i_sb;
 	struct msdos_sb_info *sbi = MSDOS_SB(sb);
 	int ret, new_fclus, last;
+#ifdef APPENDFAT_ALLOC_METRICS
+	int metric_tail_link = 0, metric_tail_buffers = 0;
+	bool metric_enabled = MSDOS_I(inode)->alloc_metrics;
+#endif
 
 	/*
 	 * We must locate the last cluster of the file to add this new
@@ -134,6 +138,12 @@ int appendfat_chain_add(struct inode *inode, int new_dclus, int nr_cluster)
 		if (ret >= 0) {
 			int wait = inode_needs_sync(inode);
 			int old = ret;
+#ifdef APPENDFAT_ALLOC_METRICS
+			if (metric_enabled) {
+				metric_tail_link = 1;
+				metric_tail_buffers = fatent.nr_bhs;
+			}
+#endif
 
 			ret = appendfat_ent_write(inode, &fatent, new_dclus, wait);
 			if (ret < 0)
@@ -169,6 +179,12 @@ int appendfat_chain_add(struct inode *inode, int new_dclus, int nr_cluster)
 		appendfat_cache_inval_inode(inode);
 	}
 	inode->i_blocks += nr_cluster << (sbi->cluster_bits - 9);
+#ifdef APPENDFAT_ALLOC_METRICS
+	if (metric_enabled)
+		pr_info("APPENDFAT_ALLOC_METRIC attach clusters=%d tail_link=%d fat_buffers=%d mirror_buffers=%d\n",
+			nr_cluster, metric_tail_link, metric_tail_buffers,
+			metric_tail_buffers * (sbi->fats - 1));
+#endif
 
 	return 0;
 }

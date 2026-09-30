@@ -133,6 +133,9 @@ struct msdos_inode_info {
 	struct rw_semaphore truncate_lock; /* protect bmap against truncate */
 	struct timespec64 i_crtime;	/* File creation (birth) time */
 	struct mapping_metadata_bhs i_metadata_bhs;
+#ifdef APPENDFAT_ALLOC_METRICS
+	bool alloc_metrics;
+#endif
 	struct inode vfs_inode;
 };
 

@@ -1,6 +1,7 @@
 # Append arena design boundary
 
-This note defines the first append-oriented experiment without yet changing allocation semantics.
+This note records the append-oriented allocation boundary and the first
+explicit-reservation experiment.
 
 The goal is to reduce repeated metadata mutation during sustained append workloads while preserving an ordinary FAT on-disk format and keeping stock FAT able to inspect the same volume.
 
@@ -30,11 +31,20 @@ Important: this is **not a physical-contiguity guarantee**. The scan may skip oc
 
 `appendfat_chain_add(inode, first_cluster, nr_cluster)` can attach a prepared chain to the file and account the full `nr_cluster` in `i_blocks`.
 
-### Current keep-size preallocation is deliberately unbatched
+### Original keep-size preallocation path
 
-The current `fat_fallocate()` keep-size loop repeatedly calls `appendfat_add_cluster()`. `appendfat_add_cluster()` itself allocates exactly one cluster and then links it to the file.
+The pinned baseline `fat_fallocate()` keep-size loop repeatedly called
+`appendfat_add_cluster()`. That helper allocated exactly one cluster and then
+linked it to the file. The baseline and batched QEMU counters are retained in
+[`keep-size-batching-measurements.md`](keep-size-batching-measurements.md).
 
-So there is a concrete optimization seam: the filesystem already knows how to represent preallocated capacity, while the existing path performs that reservation one cluster at a time.
+The explicit keep-size path now allocates bounded batches through the existing
+`appendfat_alloc_clusters()` and attaches each batch with
+`appendfat_chain_add()`. Its batch size is bounded by the allocator's existing
+`MAX_BUF_PER_PAGE / 2` limit. Ordinary write allocation remains one cluster at
+a time. The ENOSPC path falls back to the old one-cluster loop after an
+incomplete batch is unwound, preserving the old partial-allocation result and
+error.
 
 
 ## Source trail and higher-level storage intent
@@ -120,7 +130,8 @@ Do not assume `fsck.fat` or non-Linux FAT implementations accept a cluster chain
 
 ## First semantic candidate: batch explicit reservations
 
-If the compatibility fixture is green, the smallest implementation experiment is to change only the explicit keep-size preallocation path:
+The implemented experiment changes only the explicit keep-size preallocation
+path:
 
 ```text
 requested reservation
@@ -134,7 +145,12 @@ attach that prepared chain once with appendfat_chain_add(..., count)
 repeat only if the reservation exceeds the allocator's bounded batch size
 ```
 
-This should be evaluated before automatic reserve-ahead behavior.
+The measured QEMU result reduced allocator calls, distinct FAT buffers passed
+through allocator/attachment processing, and FSINFO dirty notifications. It
+did not reduce the measured FAT entry changes or guest-visible virtio writes
+for the representative 17-cluster workload. See the measurement receipt for
+the counters and their limits. This remains separate from automatic
+reserve-ahead behavior.
 
 The intended invariant is semantic equivalence with the existing `FALLOC_FL_KEEP_SIZE` interface: same logical size, same ordinary FAT chain representation, same error behavior unless a difference is explicitly justified.
 

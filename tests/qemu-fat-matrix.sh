@@ -11,7 +11,7 @@ linux_tree=$1
 
 . "$repo/tests/qemu-common.sh"
 
-appendfat_require_commands busybox cpio fsck.fat mkfs.fat qemu-system-x86_64 timeout truncate
+appendfat_require_commands busybox cc cpio fsck.fat mkfs.fat qemu-system-x86_64 timeout truncate
 appendfat_prepare_linux "$repo" "$linux_tree" builtin
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/appendfat-fat-matrix.XXXXXX")
@@ -23,6 +23,7 @@ fat32=$work/fat32.img
 root=$work/initramfs
 initramfs=$work/initramfs.cpio.gz
 qemu_log=$work/qemu.log
+helper=$work/fallocate-keep-size
 
 truncate -s 8M "$fat12"
 truncate -s 64M "$fat16"
@@ -31,8 +32,12 @@ mkfs.fat -F 12 -n AFAT12 "$fat12"
 mkfs.fat -F 16 -n AFAT16 "$fat16"
 mkfs.fat -F 32 -n AFAT32 "$fat32"
 
+cc -O2 -static -Wall -Wextra -Werror \
+    "$repo/tests/fallocate-keep-size.c" -o "$helper"
+
 mkdir -p "$root/bin" "$root/proc" "$root/sys" "$root/dev" "$root/mnt"
 cp "$(command -v busybox)" "$root/bin/busybox"
+cp "$helper" "$root/bin/fallocate-keep-size"
 for applet in sh mount umount mkdir cat sync poweroff grep
 do
     ln -s busybox "$root/bin/$applet"
