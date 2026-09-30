@@ -178,7 +178,7 @@ Those costs must be measured separately. The project should optimize the writes 
 ## Automatic reserve-ahead policy
 
 The first automatic policy is intentionally small and is implemented only in
-appendfat's ordinary allocation path. When a write reaches a cluster boundary
+appendfat's ordinary allocation path while the inode remains live. When a write reaches a cluster boundary
 with no allocated capacity remaining, appendfat requests one complete
 `MAX_BUF_PER_PAGE / 2` allocator batch and attaches it to the file as one
 prepared chain.
@@ -202,8 +202,9 @@ The policy is therefore:
   checks that unused reserve-ahead clusters are released;
 - **enablement:** reserve-ahead is part of the experimental appendfat
   filesystem rather than a stock-vfat mount option;
-- **persistence:** no new on-disk reservation metadata is introduced. Unused
-  speculative capacity is not promised across a clean unmount/remount.
+- **persistence:** no new on-disk reservation metadata is introduced. Existing
+  FAT inode eviction trims unwritten preallocation, so reserve-ahead is not yet
+  promised across inode eviction, close/reopen, or clean unmount/remount.
 
 This deliberately keeps policy out of `appendfat_alloc_clusters()`. The
 allocator remains a bounded primitive; the ordinary write path decides when
