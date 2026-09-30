@@ -1,0 +1,581 @@
+module AppendFatTypes
+
+-- Semantic type sketch for Append FAT.
+--
+-- This is deliberately above syscalls, VFS objects, struct buffer_head, and
+-- on-disk FAT encoding.  The model keeps four facts separate:
+--
+--   * allocated capacity: bytes backed by the file-owned cluster chain;
+--   * committed length: the logical EOF visible as file contents;
+--   * durable extent: append data known to have reached the required durability boundary;
+--   * written extent: append data that has been written, even if not yet durable.
+--
+-- In particular:
+--
+--   committed <= durable <= written <= allocated capacity
+--
+-- A failed append is therefore allowed to dirty bytes beyond committed EOF
+-- without advancing committed length.
+--
+-- This sketch also keeps FAT's own reserved-entry state distinct from an
+-- Append FAT reservation.  Append reservation means ordinary file-owned
+-- clusters beyond committed EOF; it does not require a new FAT entry kind or
+-- a new on-disk format.
+--
+-- The checked proof constructors below stand in for runtime validation at the
+-- raw-storage boundary.  A production Idriç library should hide those
+-- constructors and expose only checked constructors/operations.
+
+data ByteCount = Bytes Number
+
+data ClusterCount = Clusters Number
+
+data RawClusterNumber = RawClusterNumber Number
+
+add_bytes : ByteCount → ByteCount → ByteCount
+add_bytes (Bytes left) (Bytes right) = Bytes (left + right)
+
+times_bytes : ByteCount → Number → ByteCount
+times_bytes (Bytes size) count = Bytes (size * count)
+
+next_cluster_count : ClusterCount → ClusterCount
+next_cluster_count (Clusters count) = Clusters (count + 1)
+
+
+-- --------------------------------------------------------------------------
+-- Checked arithmetic relationships
+-- --------------------------------------------------------------------------
+
+data AtMost : ByteCount → ByteCount → Type where
+  CheckedAtMost : AtMost smaller larger
+
+transitive_at_most : AtMost a b → AtMost b c → AtMost a c
+transitive_at_most CheckedAtMost CheckedAtMost = CheckedAtMost
+
+append_extends : (base : ByteCount) → (extra : ByteCount) →
+                 AtMost base (add_bytes base extra)
+append_extends _ _ = CheckedAtMost
+
+
+-- --------------------------------------------------------------------------
+-- Volume identity and valid data clusters
+-- --------------------------------------------------------------------------
+
+data Volume
+  = FatVolume ByteCount ClusterCount
+
+cluster_size : Volume → ByteCount
+cluster_size (FatVolume bytes_per_cluster _) = bytes_per_cluster
+
+capacity_for : Volume → ClusterCount → ByteCount
+capacity_for volume (Clusters count) =
+  times_bytes (cluster_size volume) count
+
+data FileIdentity : Volume → Type where
+  FileToken : Number → FileIdentity volume
+
+data InDataClusterRange : (volume : Volume) → RawClusterNumber → Type where
+  RangeChecked : InDataClusterRange volume raw
+
+data DataCluster : Volume → Type where
+  CheckedDataCluster :
+    (raw : RawClusterNumber) →
+    (0 in_range : InDataClusterRange volume raw) →
+    DataCluster volume
+
+
+-- --------------------------------------------------------------------------
+-- FAT entry use
+-- --------------------------------------------------------------------------
+--
+-- FatReservedCluster means FAT's reserved entry class.
+--
+-- It is NOT Append FAT reserved capacity.  Append FAT reserved capacity uses
+-- OwnedBy clusters already linked to a file but lying beyond committed EOF.
+
+data ClusterRole : Volume → Type where
+  FreeCluster : ClusterRole volume
+  BadCluster : ClusterRole volume
+  FatReservedCluster : ClusterRole volume
+  OwnedBy : FileIdentity volume → ClusterRole volume
+
+data ClusterToken :
+  (volume : Volume) →
+  ClusterRole volume →
+  Type where
+    TokenAt : DataCluster volume → ClusterToken volume role
+
+claim_cluster :
+  (owner : FileIdentity volume) →
+  (1 free : ClusterToken volume FreeCluster) →
+  ClusterToken volume (OwnedBy owner)
+claim_cluster _ (TokenAt cluster) = TokenAt cluster
+
+release_cluster :
+  (1 owned : ClusterToken volume (OwnedBy owner)) →
+  ClusterToken volume FreeCluster
+release_cluster (TokenAt cluster) = TokenAt cluster
+
+
+-- --------------------------------------------------------------------------
+-- File-owned chain
+-- --------------------------------------------------------------------------
+--
+-- The chain is inductive rather than an arbitrary graph:
+--
+--   * LastCluster is the FAT end-of-chain state;
+--   * LinkedCluster is the FAT next-cluster state;
+--   * every token is indexed by the same file owner;
+--   * cluster tokens are linear, so claiming/linking consumes them.
+--
+-- Within this API that rules out accidental local cycles and cross-links.
+-- Reconstructing the initial token inventory from an existing disk still
+-- requires a mount-time global validation pass.
+
+data NonEmptyChain :
+  (volume : Volume) →
+  (owner : FileIdentity volume) →
+  ClusterCount →
+  Type where
+    LastCluster :
+      (1 cluster : ClusterToken volume (OwnedBy owner)) →
+      NonEmptyChain volume owner (Clusters 1)
+
+    LinkedCluster :
+      (1 cluster : ClusterToken volume (OwnedBy owner)) →
+      (1 tail : NonEmptyChain volume owner count) →
+      NonEmptyChain volume owner (next_cluster_count count)
+
+data ClusterChain :
+  (volume : Volume) →
+  (owner : FileIdentity volume) →
+  ClusterCount →
+  Type where
+    NoClusters :
+      ClusterChain volume owner (Clusters 0)
+
+    HasClusters :
+      (1 chain : NonEmptyChain volume owner count) →
+      ClusterChain volume owner count
+
+append_to_nonempty :
+  (1 chain : NonEmptyChain volume owner count) →
+  (1 next : ClusterToken volume (OwnedBy owner)) →
+  NonEmptyChain volume owner (next_cluster_count count)
+append_to_nonempty (LastCluster cluster) next =
+  LinkedCluster cluster (LastCluster next)
+append_to_nonempty (LinkedCluster cluster tail) next =
+  LinkedCluster cluster (append_to_nonempty tail next)
+
+append_to_chain :
+  (1 chain : ClusterChain volume owner count) →
+  (1 next : ClusterToken volume (OwnedBy owner)) →
+  ClusterChain volume owner (next_cluster_count count)
+append_to_chain NoClusters next =
+  HasClusters (LastCluster next)
+append_to_chain (HasClusters chain) next =
+  HasClusters (append_to_nonempty chain next)
+
+
+-- --------------------------------------------------------------------------
+-- Stable file state
+-- --------------------------------------------------------------------------
+
+data AppendFile :
+  (volume : Volume) →
+  (owner : FileIdentity volume) →
+  (clusters : ClusterCount) →
+  (committed : ByteCount) →
+  (durable : ByteCount) →
+  (written : ByteCount) →
+  Type where
+    FileState :
+      (1 chain : ClusterChain volume owner clusters) →
+      (0 committed_is_durable : AtMost committed durable) →
+      (0 durable_is_written : AtMost durable written) →
+      (0 written_fits_capacity :
+          AtMost written (capacity_for volume clusters)) →
+      AppendFile volume owner clusters committed durable written
+
+
+-- Growing the file-owned chain increases allocated capacity but leaves logical
+-- length, durable extent, and written extent unchanged.
+
+capacity_grows :
+  {volume : Volume} →
+  {clusters : ClusterCount} →
+  AtMost
+    (capacity_for volume clusters)
+    (capacity_for volume (next_cluster_count clusters))
+capacity_grows = CheckedAtMost
+
+reserve_one_cluster :
+  {volume : Volume} →
+  {owner : FileIdentity volume} →
+  {clusters : ClusterCount} →
+  {committed : ByteCount} →
+  {durable : ByteCount} →
+  {written : ByteCount} →
+  (1 free : ClusterToken volume FreeCluster) →
+  (1 file :
+      AppendFile volume owner clusters committed durable written) →
+  AppendFile
+    volume
+    owner
+    (next_cluster_count clusters)
+    committed
+    durable
+    written
+reserve_one_cluster free
+  (FileState chain committed_is_durable durable_is_written written_fits_capacity) =
+    let owned = claim_cluster owner free
+        longer_chain = append_to_chain chain owned
+        larger_capacity =
+          transitive_at_most written_fits_capacity capacity_grows
+    in FileState
+         longer_chain
+         committed_is_durable
+         durable_is_written
+         larger_capacity
+
+
+-- --------------------------------------------------------------------------
+-- Append transaction
+-- --------------------------------------------------------------------------
+--
+-- prepare -> write -> make durable -> commit
+--
+-- Only commit advances logical EOF.  The earlier states may be abandoned while
+-- retaining larger written/durable extents beyond committed EOF.
+
+data PreparedAppend :
+  (volume : Volume) →
+  (owner : FileIdentity volume) →
+  (clusters : ClusterCount) →
+  (committed : ByteCount) →
+  (durable : ByteCount) →
+  (written_before : ByteCount) →
+  (target : ByteCount) →
+  Type where
+    Prepared :
+      (1 file :
+          AppendFile
+            volume
+            owner
+            clusters
+            committed
+            durable
+            written_before) →
+      (0 extends_committed : AtMost committed target) →
+      (0 target_fits_capacity :
+          AtMost target (capacity_for volume clusters)) →
+      PreparedAppend
+        volume
+        owner
+        clusters
+        committed
+        durable
+        written_before
+        target
+
+prepare_append :
+  (amount : ByteCount) →
+  (0 target_fits_capacity :
+      AtMost
+        (add_bytes committed amount)
+        (capacity_for volume clusters)) →
+  (1 file :
+      AppendFile
+        volume
+        owner
+        clusters
+        committed
+        durable
+        written_before) →
+  PreparedAppend
+    volume
+    owner
+    clusters
+    committed
+    durable
+    written_before
+    (add_bytes committed amount)
+prepare_append amount target_fits_capacity file =
+  Prepared
+    file
+    (append_extends committed amount)
+    target_fits_capacity
+
+
+data WrittenAppend :
+  (volume : Volume) →
+  (owner : FileIdentity volume) →
+  (clusters : ClusterCount) →
+  (committed : ByteCount) →
+  (durable_before : ByteCount) →
+  (written_before : ByteCount) →
+  (target : ByteCount) →
+  (written_after : ByteCount) →
+  Type where
+    Written :
+      (1 file :
+          AppendFile
+            volume
+            owner
+            clusters
+            committed
+            durable_before
+            written_after) →
+      (0 old_written_preserved :
+          AtMost written_before written_after) →
+      (0 target_was_written :
+          AtMost target written_after) →
+      WrittenAppend
+        volume
+        owner
+        clusters
+        committed
+        durable_before
+        written_before
+        target
+        written_after
+
+record_write_completed :
+  (written_after : ByteCount) →
+  (0 old_written_preserved :
+      AtMost written_before written_after) →
+  (0 target_was_written :
+      AtMost target written_after) →
+  (0 written_fits_capacity :
+      AtMost written_after (capacity_for volume clusters)) →
+  (1 prepared :
+      PreparedAppend
+        volume
+        owner
+        clusters
+        committed
+        durable_before
+        written_before
+        target) →
+  WrittenAppend
+    volume
+    owner
+    clusters
+    committed
+    durable_before
+    written_before
+    target
+    written_after
+record_write_completed
+  written_after
+  old_written_preserved
+  target_was_written
+  written_fits_capacity
+  (Prepared
+    (FileState chain committed_is_durable durable_is_written _)
+    _
+    _) =
+      Written
+        (FileState
+          chain
+          committed_is_durable
+          (transitive_at_most durable_is_written old_written_preserved)
+          written_fits_capacity)
+        old_written_preserved
+        target_was_written
+
+
+data DurableAppend :
+  (volume : Volume) →
+  (owner : FileIdentity volume) →
+  (clusters : ClusterCount) →
+  (committed : ByteCount) →
+  (durable_before : ByteCount) →
+  (written_before : ByteCount) →
+  (target : ByteCount) →
+  (written_after : ByteCount) →
+  (durable_after : ByteCount) →
+  Type where
+    Durable :
+      (1 file :
+          AppendFile
+            volume
+            owner
+            clusters
+            committed
+            durable_after
+            written_after) →
+      (0 old_durable_preserved :
+          AtMost durable_before durable_after) →
+      (0 target_is_durable :
+          AtMost target durable_after) →
+      DurableAppend
+        volume
+        owner
+        clusters
+        committed
+        durable_before
+        written_before
+        target
+        written_after
+        durable_after
+
+-- This transition belongs immediately below the storage durability boundary.
+-- A real implementation may only call it after the required data flush/sync
+-- has succeeded.
+
+record_data_durable :
+  (durable_after : ByteCount) →
+  (0 old_durable_preserved :
+      AtMost durable_before durable_after) →
+  (0 target_is_durable :
+      AtMost target durable_after) →
+  (0 durable_is_written :
+      AtMost durable_after written_after) →
+  (1 written :
+      WrittenAppend
+        volume
+        owner
+        clusters
+        committed
+        durable_before
+        written_before
+        target
+        written_after) →
+  DurableAppend
+    volume
+    owner
+    clusters
+    committed
+    durable_before
+    written_before
+    target
+    written_after
+    durable_after
+record_data_durable
+  durable_after
+  old_durable_preserved
+  target_is_durable
+  durable_is_written
+  (Written
+    (FileState chain committed_is_durable _ written_fits_capacity)
+    _
+    _) =
+      Durable
+        (FileState
+          chain
+          (transitive_at_most committed_is_durable old_durable_preserved)
+          durable_is_written
+          written_fits_capacity)
+        old_durable_preserved
+        target_is_durable
+
+
+-- Publishing consumes a durability certificate.  There is no operation here
+-- that can advance committed length directly from PreparedAppend or
+-- WrittenAppend.
+
+commit_append :
+  (1 durable :
+      DurableAppend
+        volume
+        owner
+        clusters
+        committed
+        durable_before
+        written_before
+        target
+        written_after
+        durable_after) →
+  AppendFile
+    volume
+    owner
+    clusters
+    target
+    durable_after
+    written_after
+commit_append
+  (Durable
+    (FileState chain _ durable_is_written written_fits_capacity)
+    _
+    target_is_durable) =
+      FileState
+        chain
+        target_is_durable
+        durable_is_written
+        written_fits_capacity
+
+
+-- Abandoning a prepared append leaves all extents unchanged.
+
+cancel_prepared :
+  (1 prepared :
+      PreparedAppend
+        volume
+        owner
+        clusters
+        committed
+        durable
+        written
+        target) →
+  AppendFile volume owner clusters committed durable written
+cancel_prepared (Prepared file _ _) = file
+
+
+-- Abandoning after a write preserves the larger written extent but does not
+-- advance logical EOF.
+
+abort_written :
+  (1 written :
+      WrittenAppend
+        volume
+        owner
+        clusters
+        committed
+        durable
+        written_before
+        target
+        written_after) →
+  AppendFile volume owner clusters committed durable written_after
+abort_written (Written file _ _) = file
+
+
+-- Abandoning after a successful durability boundary may leave durable bytes
+-- beyond logical EOF.  Recovery still keeps committed length unchanged.
+
+abort_durable :
+  (1 durable :
+      DurableAppend
+        volume
+        owner
+        clusters
+        committed
+        durable_before
+        written_before
+        target
+        written_after
+        durable_after) →
+  AppendFile
+    volume
+    owner
+    clusters
+    committed
+    durable_after
+    written_after
+abort_durable (Durable file _ _) = file
+
+
+-- --------------------------------------------------------------------------
+-- Deliberately not encoded yet
+-- --------------------------------------------------------------------------
+--
+-- * automatic reserve-ahead batch size/growth policy;
+-- * free-space floor and ENOSPC fallback policy;
+-- * exact directory-entry and FAT mirror write ordering;
+-- * mount-time proof that the whole volume has no pre-existing cross-links;
+-- * crash recovery from every partial on-disk metadata update;
+-- * physical NAND/erase-block placement.
+--
+-- Those are real questions, but they are not reasons to collapse file identity,
+-- cluster ownership, allocated capacity, committed EOF, written data, and
+-- durable data back into untyped integers.
