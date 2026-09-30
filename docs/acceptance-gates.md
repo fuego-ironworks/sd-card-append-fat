@@ -84,8 +84,11 @@ present by the remount check. Keep-size allocation can still be evaluated as
 a mounted-session batching mechanism, but persistence requires a different
 design or a separate on-disk representation.
 
-The same fixture remains green with reservation batching. It does not by
-itself prove a future automatic reserve-ahead policy.
+The same fixture remains green with reservation batching. Once automatic
+reserve-ahead is enabled, exact live allocation during ordinary growth belongs
+to the reserve-ahead gate rather than this keep-size compatibility gate. The
+stock-vfat remount must still reduce allocation to the clusters required by
+logical size.
 
 
 ### Automatic reserve-ahead
@@ -98,7 +101,8 @@ fully consumed.
 
 The gate checks:
 
-- a one-byte write to an empty FAT32 file allocates four 512-byte clusters;
+- a one-byte write to an empty FAT32 file allocates four filesystem clusters,
+  with cluster byte size discovered from `stat` rather than hard-coded;
 - writes consuming the remainder of that capacity do not allocate again;
 - crossing the next cluster boundary refills by four clusters;
 - truncate releases unused speculative clusters;
