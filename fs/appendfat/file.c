@@ -265,7 +265,6 @@ static long fat_fallocate(struct file *file, int mode,
 {
 	int nr_cluster; /* Number of clusters to be allocated */
 	int batch;
-	int clusters[MAX_BUF_PER_PAGE / 2];
 #ifdef APPENDFAT_ALLOC_METRICS
 	bool metric_enabled = false;
 #endif
@@ -307,8 +306,8 @@ static long fat_fallocate(struct file *file, int mode,
 
 		/* Start the allocation. We are not zeroing out the clusters. */
 		while (nr_cluster > 0) {
-			batch = min_t(int, nr_cluster, ARRAY_SIZE(clusters));
-			err = appendfat_alloc_clusters(inode, clusters, batch);
+			batch = min_t(int, nr_cluster, MAX_BUF_PER_PAGE / 2);
+			err = appendfat_add_clusters(inode, batch);
 			if (err == -ENOSPC) {
 				/*
 				 * Preserve the old partial-allocation result on ENOSPC.
@@ -327,11 +326,6 @@ static long fat_fallocate(struct file *file, int mode,
 			if (err)
 				goto error;
 
-			err = appendfat_chain_add(inode, clusters[0], batch);
-			if (err) {
-				appendfat_free_clusters(inode, clusters[0]);
-				goto error;
-			}
 			nr_cluster -= batch;
 		}
 	} else {

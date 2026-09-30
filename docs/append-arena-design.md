@@ -175,23 +175,46 @@ Once the reservation exists, an append inside it can avoid FAT-chain extension a
 
 Those costs must be measured separately. The project should optimize the writes that actually dominate on the target medium rather than treating all metadata writes as interchangeable.
 
-## Automatic reserve-ahead is a later policy
+## Automatic reserve-ahead policy
 
-Automatic allocation when a writer reaches the end of the current reservation changes space consumption and failure behavior. Keep it separate from the batching experiment.
+The first automatic policy is intentionally small and is implemented only in
+appendfat's ordinary allocation path while the inode remains live. When a write reaches a cluster boundary
+with no allocated capacity remaining, appendfat requests one complete
+`MAX_BUF_PER_PAGE / 2` allocator batch and attaches it to the file as one
+prepared chain.
 
-A later policy must specify at least:
+On the pinned 4 KiB-page QEMU build that is four clusters.
 
-- initial reservation size;
-- refill threshold;
-- refill size or growth rule;
-- maximum unused reservation per file;
-- free-space floor where reserve-ahead is reduced or disabled;
-- behavior on ENOSPC;
-- truncate/unlink behavior;
-- whether a mount option enables the policy;
-- whether reservations survive close/reopen and unmount/remount.
+The policy is therefore:
 
-Do not hide such policy in a generic cluster allocator.
+- **initial reservation:** one allocator batch on the first write that needs a
+  cluster;
+- **refill threshold:** zero unused allocated clusters remain;
+- **refill size:** one allocator batch;
+- **maximum speculative capacity:** less than one batch beyond the current
+  allocation position;
+- **free-space behavior:** there is no arbitrary reserve floor; if the complete
+  batch returns `ENOSPC`, retry the old one-cluster allocation needed by the
+  current write;
+- **true ENOSPC:** return `ENOSPC` only when even that required single cluster
+  cannot be allocated;
+- **truncate/unlink:** use the existing FAT free-chain paths; the QEMU gate
+  checks that unused reserve-ahead clusters are released;
+- **enablement:** reserve-ahead is part of the experimental appendfat
+  filesystem rather than a stock-vfat mount option;
+- **persistence:** no new on-disk reservation metadata is introduced. Existing
+  FAT inode eviction trims unwritten preallocation, so reserve-ahead is not yet
+  promised across inode eviction, close/reopen, or clean unmount/remount.
+
+This deliberately keeps policy out of `appendfat_alloc_clusters()`. The
+allocator remains a bounded primitive; the ordinary write path decides when
+speculative allocation is appropriate.
+
+`tests/qemu-reserve-ahead.sh` checks the four-cluster initial batch and refill
+boundary on FAT32, truncation and unlink cleanup, stock-vfat remount, and a
+near-full FAT16 image with exactly two free data clusters. The near-full case
+must allocate one cluster, then the final remaining cluster, and only then
+return true `ENOSPC`.
 
 ## Crash boundaries to exercise before production acceptance
 
@@ -213,8 +236,9 @@ For each fixture, record what stock `vfat`, appendfat, and `fsck.fat` observe. A
 2. **Instrument metadata writes** for unreserved append versus reserved append.
 3. **Batch explicit reservation only**, keeping the user-visible `fallocate` semantics unchanged.
 4. Re-run stock-remount, `fsck.fat`, truncation, ENOSPC, and crash-cut fixtures.
-5. Only then consider an automatic append-arena policy.
-6. Reconcile the accepted design into the exact Android/vendor kernel separately.
-7. Physical SD-card testing remains a distinct final evidence layer.
+5. Exercise the bounded automatic reserve-ahead policy and its near-full fallback.
+6. Measure ordinary append metadata traffic before and after reserve-ahead.
+7. Reconcile the accepted design into the exact Android/vendor kernel separately.
+8. Physical SD-card testing remains a distinct final evidence layer.
 
 The first implementation change should be driven by these measurements, not by the assumption that contiguous allocation or a new on-disk structure is inherently required.
