@@ -179,8 +179,8 @@ static inline int __fat_get_block(struct inode *inode, sector_t iblock,
 		 */
 #ifdef APPENDFAT_ALLOC_METRICS
 		MSDOS_I(inode)->alloc_metrics = true;
-		pr_info("APPENDFAT_APPEND_METRIC reserve_start requested_clusters=%d allocated_clusters=%llu\n",
-			APPENDFAT_APPEND_AHEAD_CLUSTERS,
+		pr_info("APPENDFAT_APPEND_METRIC reserve_start requested_clusters=%lu allocated_clusters=%llu\n",
+			(unsigned long)APPENDFAT_APPEND_AHEAD_CLUSTERS,
 			(unsigned long long)(inode->i_blocks >>
 					     (sbi->cluster_bits - 9)));
 #endif
