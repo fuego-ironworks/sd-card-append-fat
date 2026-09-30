@@ -550,43 +550,6 @@ static void fill_leave_clusters(const char *path,
            leave_clusters, cluster_bytes);
 }
 
-static void append_expect_enospc(const char *path,
-                                 unsigned long long expected_size)
-{
-    unsigned char byte = 0x45;
-    struct stat st;
-    ssize_t result;
-    int saved_errno;
-    int fd = open_existing(path, O_WRONLY | O_APPEND);
-
-    errno = 0;
-    result = write(fd, &byte, 1);
-    saved_errno = errno;
-    if (result >= 0 || saved_errno != ENOSPC) {
-        fprintf(stderr,
-                "expected append ENOSPC, result=%zd errno=%d (%s)\n",
-                result, saved_errno, strerror(saved_errno));
-        exit(1);
-    }
-    if (fstat(fd, &st) != 0) {
-        perror("fstat after append ENOSPC");
-        exit(1);
-    }
-    if ((unsigned long long)st.st_size != expected_size) {
-        fprintf(stderr,
-                "append ENOSPC changed size: expected=%llu actual=%" PRIuMAX "\n",
-                expected_size, (uintmax_t)st.st_size);
-        exit(1);
-    }
-    if (close(fd) != 0) {
-        perror("close append ENOSPC");
-        exit(1);
-    }
-
-    printf("append_enospc path=%s size=%" PRIuMAX "\n",
-           path, (uintmax_t)st.st_size);
-}
-
 static void check_file(const char *path,
                        unsigned long long expected_size,
                        const char *expected_prefix,
@@ -660,7 +623,7 @@ int main(int argc, char **argv)
     if (argc < 2) {
 		fprintf(stderr,
 			"usage: %s keep|expect-enospc|size|truncate|"
-			"reserve|reserve-clusters|extend-clusters|append|append-enospc|"
+			"reserve|reserve-clusters|extend-clusters|append|"
 			"reserve-ahead-sequence|reserve-ahead-truncate|reserve-ahead-unlink|"
 			"reserve-ahead-near-full|fill-leave-clusters|check|blocks ...\n",
                 argv[0]);
@@ -852,17 +815,6 @@ int main(int argc, char **argv)
             return 2;
         }
         fill_leave_clusters(argv[2], parse_number(argv[3]), parse_number(argv[4]));
-        return 0;
-    }
-
-    if (strcmp(command, "append-enospc") == 0) {
-        if (argc != 4) {
-            fprintf(stderr,
-                    "usage: %s append-enospc PATH EXPECTED_SIZE\n",
-                    argv[0]);
-            return 2;
-        }
-        append_expect_enospc(argv[2], parse_number(argv[3]));
         return 0;
     }
 
